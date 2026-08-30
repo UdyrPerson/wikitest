@@ -1,0 +1,10 @@
+storage_state.json
+captures/
+data/
+__pycache__/
+*.pyc
+.venv/
+*.log
+wm_session_log.txt
+wm_discover_log.txt
+.claude/

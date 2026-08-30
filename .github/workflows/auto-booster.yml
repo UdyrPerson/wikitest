@@ -1,0 +1,51 @@
+name: Auto-ouverture booster WikiMasters (compte test)
+
+# Ouvre un booster via l'API directe (wm_open_booster.py --api), sans
+# navigateur -- donc sans dependance a Chrome, compatible avec un runner
+# GitHub Actions standard (ubuntu-latest). Pense pour le COMPTE DE TEST
+# uniquement (cf storage_state.json regenere pour ce compte, stocke comme
+# secret du repo, jamais commite).
+#
+# Cron GitHub Actions : pas garanti a la minute pres (peut etre retarde en
+# periode de charge), et l'intervalle mini documente est 5 minutes. 15 min
+# ici pour rester large. Un jitter aleatoire est ajoute avant l'appel pour
+# eviter un motif parfaitement regulier (meme logique que wm_auto_booster.py
+# en local -- un cron pile a l'heure est justement le signal le plus facile
+# a reperer pour un anti-bot).
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}  # bouton "Run workflow" manuel, utile pour tester
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wm-auto-booster
+  cancel-in-progress: false
+
+jobs:
+  open-booster:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Installe Playwright (client API seulement, pas de navigateur)
+        run: pip install playwright
+
+      - name: Ecrit la session du compte de test depuis le secret
+        env:
+          WM_TEST_STORAGE_STATE: ${{ secrets.WM_TEST_STORAGE_STATE }}
+        run: |
+          python -c "import os, pathlib; pathlib.Path('storage_state.json').write_text(os.environ['WM_TEST_STORAGE_STATE'])"
+
+      - name: Jitter aleatoire (0-180s) avant l'appel
+        run: python -c "import random, time; time.sleep(random.uniform(0, 180))"
+
+      - name: Ouvre un booster (mode API, sans navigateur)
+        run: python wm_open_booster.py --api
