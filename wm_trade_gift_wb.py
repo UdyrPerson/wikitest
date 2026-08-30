@@ -86,6 +86,11 @@ def gift(req, target_username):
         print("Rien a envoyer (solde nul).")
         return
 
+    # timeout releve a 90s : la valeur par defaut de Playwright (30s) a
+    # provoque un TimeoutError sur cet appel le 30/08/2026 alors que la
+    # creation de l'echange avait probablement abouti cote serveur. Un
+    # timeout ici est le pire cas -- on ignore une reponse qui existe, donc
+    # on ne sauvegarde pas les cookies tournes qu'elle transportait.
     create_resp = req.post(
         "/api/trades",
         data={
@@ -94,6 +99,7 @@ def gift(req, target_username):
             "initiator_wikibidous": balance,
             "recipient_wikibidous": 0,
         },
+        timeout=90000,
     )
     if create_resp.status >= 400:
         print(f"Echec ({create_resp.status}) : {create_resp.text()[:500]}")

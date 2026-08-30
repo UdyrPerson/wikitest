@@ -76,35 +76,58 @@ jobs:
         continue-on-error: true
         run: python wm_discard.py state1.json --rarities C,PC,R
 
+      # Chaque compte renvoie SA session dans SON secret juste apres
+      # avoir ete traite, et non tous les cinq a la fin. Sans ca, ce
+      # workflow rechargeait les secrets au demarrage, tournait plusieurs
+      # minutes, puis reecrivait les cinq -- ecrasant au passage tout
+      # secret qu'un workflow de booster avait rafraichi entre-temps. La
+      # version ecrasee contenait un refresh token deja consomme, donc le
+      # compte tombait en 401 au run suivant (constate le 30/08/2026 sur
+      # les comptes 4 et 5, traites en dernier ici, donc les plus exposes).
+      # Pousser au fil de l'eau ramene la fenetre de course de plusieurs
+      # minutes a quelques secondes.
+      - name: Compte 1 -> sauvegarde la session
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh secret set WM_TEST_STORAGE_STATE --repo ${{ github.repository }} < state1.json
+
       - name: Compte 2 -> defausse C/PC/R
         continue-on-error: true
         run: python wm_discard.py state2.json --rarities C,PC,R
+
+      - name: Compte 2 -> sauvegarde la session
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh secret set WM_TEST2_STORAGE_STATE --repo ${{ github.repository }} < state2.json
 
       - name: Compte 3 (collecteur) -> defausse C/PC/R
         continue-on-error: true
         run: python wm_discard.py state3.json --rarities C,PC,R
 
+      - name: Compte 3 -> sauvegarde la session
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh secret set WM_TEST3_STORAGE_STATE --repo ${{ github.repository }} < state3.json
+
       - name: Compte 4 -> defausse C/PC/R
         continue-on-error: true
         run: python wm_discard.py state4.json --rarities C,PC,R
+
+      - name: Compte 4 -> sauvegarde la session
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh secret set WM_TEST4_STORAGE_STATE --repo ${{ github.repository }} < state4.json
 
       - name: Compte 5 -> defausse C/PC/R
         continue-on-error: true
         run: python wm_discard.py state5.json --rarities C,PC,R
 
-      # Renvoie les sessions tournees dans leurs secrets. Indispensable :
-      # le serveur fait tourner le refresh token des que le jeton d'acces a
-      # expire, et rejouer un jeton perime fait REVOQUER la session par
-      # Supabase -- sans ca, chaque run tuait la session du run suivant
-      # (cf wm_session_io.py). `if: always()` car la rotation a pu avoir
-      # lieu avant une erreur.
-      - name: Sauvegarde les sessions (rotation des jetons) dans les secrets
+      - name: Compte 5 -> sauvegarde la session
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
-        run: |
-          gh secret set WM_TEST_STORAGE_STATE --repo ${{ github.repository }} < state1.json
-          gh secret set WM_TEST2_STORAGE_STATE --repo ${{ github.repository }} < state2.json
-          gh secret set WM_TEST3_STORAGE_STATE --repo ${{ github.repository }} < state3.json
-          gh secret set WM_TEST4_STORAGE_STATE --repo ${{ github.repository }} < state4.json
-          gh secret set WM_TEST5_STORAGE_STATE --repo ${{ github.repository }} < state5.json
+        run: gh secret set WM_TEST5_STORAGE_STATE --repo ${{ github.repository }} < state5.json
