@@ -28,6 +28,8 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
+from wm_session_io import persist
+
 BASE = "https://www.wiki-masters.com"
 
 DELAY = (2.0, 3.0)
@@ -127,6 +129,11 @@ def main():
             except SystemExit as e:
                 skipped.append((label, str(e)))
             finally:
+                # Meme un simple GET peut faire tourner le refresh token
+                # cote serveur : sans sauvegarde, ce rapport en lecture
+                # seule revoquerait les sessions qu'il consulte
+                # (cf wm_session_io).
+                persist(req_ctx, path)
                 req_ctx.dispose()
 
     # --- Rapport Markdown ---

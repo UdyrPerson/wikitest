@@ -25,8 +25,31 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
+from wm_session_io import persist
+
 BASE = "https://www.wiki-masters.com"
 DELAY = 2.0  # entre deux acceptations, cf CLAUDE.md
+
+
+def accept_pending(req):
+    trades_resp = req.get("/api/trades")
+    if trades_resp.status in (401, 403):
+        raise SystemExit(f"{trades_resp.status} sur /api/trades — session expiree.")
+    trades = trades_resp.json().get("trades", [])
+    pending = [t for t in trades if t.get("status") == "pending"]
+
+    print(f"{len(pending)} offre(s) en attente sur {len(trades)} au total.")
+
+    for i, t in enumerate(pending, 1):
+        initiator = t.get("initiator", {}).get("username", "?")
+        wb = t.get("initiator_wikibidous", 0)
+        resp = req.patch(f"/api/trades/{t['id']}", data={"action": "accept"})
+        if resp.status >= 400:
+            print(f"  [{i}] echec sur offre de {initiator} ({wb} wb) : {resp.status} {resp.text()[:200]}")
+        else:
+            print(f"  [{i}] acceptee : {initiator} -> {wb} wb (status={resp.json().get('status')})")
+        if i < len(pending):
+            time.sleep(DELAY)
 
 
 def main():
@@ -39,27 +62,14 @@ def main():
 
     with sync_playwright() as p:
         req = p.request.new_context(storage_state=str(state_path), base_url=BASE)
-
-        trades_resp = req.get("/api/trades")
-        if trades_resp.status in (401, 403):
-            raise SystemExit(f"{trades_resp.status} sur /api/trades — session expiree.")
-        trades = trades_resp.json().get("trades", [])
-        pending = [t for t in trades if t.get("status") == "pending"]
-
-        print(f"{len(pending)} offre(s) en attente sur {len(trades)} au total.")
-
-        for i, t in enumerate(pending, 1):
-            initiator = t.get("initiator", {}).get("username", "?")
-            wb = t.get("initiator_wikibidous", 0)
-            resp = req.patch(f"/api/trades/{t['id']}", data={"action": "accept"})
-            if resp.status >= 400:
-                print(f"  [{i}] echec sur offre de {initiator} ({wb} wb) : {resp.status} {resp.text()[:200]}")
-            else:
-                print(f"  [{i}] acceptee : {initiator} -> {wb} wb (status={resp.json().get('status')})")
-            if i < len(pending):
-                time.sleep(DELAY)
-
-        req.dispose()
+        try:
+            accept_pending(req)
+        finally:
+            # Le serveur a pu faire tourner le refresh token pendant ces
+            # appels : sans sauvegarde, la session est revoquee au prochain
+            # usage (cf wm_session_io).
+            persist(req, state_path)
+            req.dispose()
 
 
 if __name__ == "__main__":

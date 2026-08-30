@@ -82,6 +82,8 @@ from urllib.parse import urlparse
 
 from playwright.sync_api import sync_playwright
 
+from wm_session_io import persist
+
 
 def _detach_flags():
     """Flags Windows necessaires pour que Chrome survive a la fin de CE
@@ -673,8 +675,15 @@ def main():
 
         with sync_playwright() as p:
             req_ctx = p.request.new_context(storage_state=str(STATE), base_url=BASE)
-            results = open_via_api(req_ctx, count)
-            req_ctx.dispose()
+            # try/finally : open_via_api leve SystemExit sur 401/403, et le
+            # serveur a pu faire tourner le refresh token AVANT cette
+            # erreur. Sans sauvegarde, la copie stockee devient perimee et
+            # la session sera revoquee au prochain usage (cf wm_session_io).
+            try:
+                results = open_via_api(req_ctx, count)
+            finally:
+                persist(req_ctx, STATE)
+                req_ctx.dispose()
 
         DATA.mkdir(exist_ok=True)
         stamp = time.strftime("%Y-%m-%d_%H%M%S")

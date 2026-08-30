@@ -52,3 +52,15 @@ jobs:
 
       - name: Ouvre tous les boosters disponibles (mode API, sans navigateur)
         run: python wm_open_booster.py --api --count 10
+
+      # Renvoie la session dans le secret. Indispensable : le serveur fait
+      # tourner le refresh token des que le jeton d'acces a expire, et
+      # rejouer un jeton perime fait REVOQUER la session par Supabase.
+      # Sans cette etape, chaque run tuait la session du run suivant
+      # (cf wm_session_io.py). `if: always()` car la rotation a pu avoir
+      # lieu avant l'erreur qui a fait echouer l'etape precedente.
+      - name: Sauvegarde la session (rotation du jeton) dans le secret
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh secret set WM_TEST5_STORAGE_STATE --repo ${{ github.repository }} < storage_state.json

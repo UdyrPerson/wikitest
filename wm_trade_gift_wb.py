@@ -25,6 +25,8 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
+from wm_session_io import persist
+
 BASE = "https://www.wiki-masters.com"
 
 
@@ -40,56 +42,64 @@ def main():
 
     with sync_playwright() as p:
         req = p.request.new_context(storage_state=str(state_path), base_url=BASE)
-
-        friends_resp = req.get("/api/friends")
-        if friends_resp.status in (401, 403):
-            raise SystemExit(f"{friends_resp.status} sur /api/friends — session expiree.")
-        friendships = friends_resp.json().get("friendships", [])
-
-        recipient_id = None
-        for f in friendships:
-            if f.get("status") != "accepted":
-                continue
-            for side in ("requester", "addressee"):
-                user = f.get(side, {})
-                if user.get("username") == target_username:
-                    recipient_id = user.get("id")
-                    break
-            if recipient_id:
-                break
-
-        if recipient_id is None:
-            raise SystemExit(
-                f"'{target_username}' non trouve parmi les amis acceptes de ce compte. "
-                "Il doit deja etre ami (verifie dans l'interface d'abord)."
-            )
-
-        balance_resp = req.get("/api/wikibidous")
-        balance = balance_resp.json().get("balance", 0)
-        print(f"Solde actuel : {balance} wb")
-
-        if balance <= 0:
-            print("Rien a envoyer (solde nul).")
+        try:
+            gift(req, target_username)
+        finally:
+            # Le serveur a pu faire tourner le refresh token pendant ces
+            # appels : sans sauvegarde, la session est revoquee au prochain
+            # usage (cf wm_session_io).
+            persist(req, state_path)
             req.dispose()
-            return
 
-        create_resp = req.post(
-            "/api/trades",
-            data={
-                "recipient_id": recipient_id,
-                "items": [],
-                "initiator_wikibidous": balance,
-                "recipient_wikibidous": 0,
-            },
+
+def gift(req, target_username):
+    friends_resp = req.get("/api/friends")
+    if friends_resp.status in (401, 403):
+        raise SystemExit(f"{friends_resp.status} sur /api/friends — session expiree.")
+    friendships = friends_resp.json().get("friendships", [])
+
+    recipient_id = None
+    for f in friendships:
+        if f.get("status") != "accepted":
+            continue
+        for side in ("requester", "addressee"):
+            user = f.get(side, {})
+            if user.get("username") == target_username:
+                recipient_id = user.get("id")
+                break
+        if recipient_id:
+            break
+
+    if recipient_id is None:
+        raise SystemExit(
+            f"'{target_username}' non trouve parmi les amis acceptes de ce compte. "
+            "Il doit deja etre ami (verifie dans l'interface d'abord)."
         )
-        if create_resp.status >= 400:
-            print(f"Echec ({create_resp.status}) : {create_resp.text()[:500]}")
-        else:
-            trade = create_resp.json().get("trade", {})
-            print(f"Offre envoyee a {target_username} : {balance} wb — trade id {trade.get('id')}, "
-                  f"status={trade.get('status')}")
 
-        req.dispose()
+    balance_resp = req.get("/api/wikibidous")
+    balance = balance_resp.json().get("balance", 0)
+    print(f"Solde actuel : {balance} wb")
+
+    if balance <= 0:
+        print("Rien a envoyer (solde nul).")
+        return
+
+    create_resp = req.post(
+        "/api/trades",
+        data={
+            "recipient_id": recipient_id,
+            "items": [],
+            "initiator_wikibidous": balance,
+            "recipient_wikibidous": 0,
+        },
+    )
+    if create_resp.status >= 400:
+        print(f"Echec ({create_resp.status}) : {create_resp.text()[:500]}")
+    else:
+        trade = create_resp.json().get("trade", {})
+        print(f"Offre envoyee a {target_username} : {balance} wb — trade id {trade.get('id')}, "
+              f"status={trade.get('status')}")
+
 
 
 if __name__ == "__main__":

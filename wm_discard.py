@@ -44,6 +44,8 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
+from wm_session_io import persist
+
 BASE = "https://www.wiki-masters.com"
 
 DELAY = (2.0, 3.0)
@@ -132,16 +134,22 @@ def main():
         req_ctx = p.request.new_context(storage_state=str(state_path), base_url=BASE)
 
         total = 0
-        for rarity in rarities:
-            print(f"\n--- {rarity} ---")
-            n = discard_rarity(req_ctx, rarity, remaining_budget)
-            print(f"  {n} carte(s) '{rarity}' defaussee(s)")
-            total += n
-            if remaining_budget[0] <= 0:
-                print("Limite --max atteinte — arret.")
-                break
-
-        req_ctx.dispose()
+        # try/finally : discard_rarity leve SystemExit sur 401/403, et le
+        # serveur a pu faire tourner le refresh token avant. Sans
+        # sauvegarde, la session sera revoquee au prochain usage
+        # (cf wm_session_io).
+        try:
+            for rarity in rarities:
+                print(f"\n--- {rarity} ---")
+                n = discard_rarity(req_ctx, rarity, remaining_budget)
+                print(f"  {n} carte(s) '{rarity}' defaussee(s)")
+                total += n
+                if remaining_budget[0] <= 0:
+                    print("Limite --max atteinte — arret.")
+                    break
+        finally:
+            persist(req_ctx, state_path)
+            req_ctx.dispose()
 
     print(f"\nTotal : {total} carte(s) defaussee(s) sur {rarities}.")
 
