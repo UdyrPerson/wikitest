@@ -20,6 +20,7 @@ echouer le rapport des autres -- meme principe que le continue-on-error des
 workflows de defausse et de trade (les jetons Supabase expirent en 1h).
 """
 
+import json
 import random
 import sys
 import time
@@ -75,12 +76,65 @@ def get_balance(req_ctx):
     return resp.json().get("balance")
 
 
+def emit_fragment(path, label, rows, rarities, balance, error):
+    """Ecrit le resultat d'UN compte, pour agregation ulterieure.
+
+    Le workflow traite les comptes un par un et repousse le secret de
+    chacun juste apres son passage : charger les cinq secrets, tourner
+    plusieurs minutes puis tous les reecrire ecrasait ceux qu'un autre
+    workflow avait rafraichis entre-temps (meme bug que discard.yml et
+    trade.yml, corrige le 30/08/2026). Ces fragments permettent de garder
+    le tableau agrege malgre le decoupage."""
+    payload = {
+        "label": label,
+        "rarities": rarities,
+        "balance": balance,
+        "error": error,
+        "cards": [
+            {
+                "title": r.get("card", {}).get("wikipedia_title", "?"),
+                "rarity": r.get("card", {}).get("rarity"),
+                "count": r.get("count", 1),
+            }
+            for r in rows
+        ],
+    }
+    Path(path).write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+
+def merge_fragments(paths):
+    """Reconstruit le rapport Markdown a partir des fragments par compte."""
+    aggregate, skipped, balance, balance_of, rarities = {}, [], None, None, []
+    for p in paths:
+        try:
+            frag = json.loads(Path(p).read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        rarities = frag.get("rarities") or rarities
+        label = frag.get("label", "?")
+        if frag.get("error"):
+            skipped.append((label, frag["error"]))
+        if frag.get("balance") is not None:
+            balance, balance_of = frag["balance"], label
+        for c in frag.get("cards", []):
+            entry = aggregate.setdefault(
+                c["title"], {"rarity": c.get("rarity"), "holders": defaultdict(int)}
+            )
+            entry["holders"][label] += c.get("count", 1)
+    render(aggregate, skipped, balance, balance_of, rarities, len(paths))
+
+
 def main():
     accounts = []
     rarities = DEFAULT_RARITIES
     balance_of = None
+    json_out = None
 
     args = sys.argv[1:]
+    if args and args[0] == "--merge":
+        merge_fragments(args[1:])
+        return
+
     i = 0
     while i < len(args):
         a = args[i]
@@ -89,6 +143,9 @@ def main():
             i += 2
         elif a == "--balance-of":
             balance_of = args[i + 1]
+            i += 2
+        elif a == "--json-out":
+            json_out = args[i + 1]
             i += 2
         else:
             if "=" not in a:
@@ -107,6 +164,8 @@ def main():
     aggregate = {}
     skipped = []
     balance = None
+    raw_rows = []
+    err = None
 
     with sync_playwright() as p:
         for label, path in accounts:
@@ -118,6 +177,7 @@ def main():
             try:
                 for rarity in rarities:
                     for row in fetch_rarity(req_ctx, rarity):
+                        raw_rows.append(row)
                         card = row.get("card", {})
                         title = card.get("wikipedia_title", "?")
                         entry = aggregate.setdefault(
@@ -129,6 +189,7 @@ def main():
                 if balance_of is not None and label == balance_of:
                     balance = get_balance(req_ctx)
             except SystemExit as e:
+                err = str(e)
                 skipped.append((label, str(e)))
             finally:
                 # Meme un simple GET peut faire tourner le refresh token
@@ -138,8 +199,16 @@ def main():
                 persist(req_ctx, path)
                 req_ctx.dispose()
 
-    # --- Rapport Markdown ---
-    print(f"## Cartes {'/'.join(rarities)} — {len(accounts)} comptes\n")
+    if json_out:
+        emit_fragment(json_out, accounts[0][0], raw_rows, rarities, balance, err)
+        return
+
+    render(aggregate, skipped, balance, balance_of, rarities, len(accounts))
+
+
+def render(aggregate, skipped, balance, balance_of, rarities, n_accounts):
+    """Rapport Markdown, commun au mode direct et au mode --merge."""
+    print(f"## Cartes {'/'.join(rarities)} — {n_accounts} comptes\n")
 
     if aggregate:
         def sort_key(item):

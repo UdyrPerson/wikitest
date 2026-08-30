@@ -676,7 +676,22 @@ def run_ouverture(p) -> bool:
 
     stamp = time.strftime("%Y%m%d-%H%M%S")
     candidates = recon(page, stamp)
-    return open_and_reveal(ctx, page, candidates, stamp)
+    try:
+        return open_and_reveal(ctx, page, candidates, stamp)
+    finally:
+        # Recopie les cookies de la fenetre dans le fichier de session : la
+        # navigation a pu faire tourner le jeton cote serveur, et une copie
+        # perimee fait tomber le prochain usage en 401 (cf wm_session_io).
+        #
+        # ATTENTION, ca ne protege que jusqu'a la fin de ce script : une
+        # fenetre Chrome laissee OUVERTE continue de rafraichir la session
+        # de son cote, et le fichier (comme le secret GitHub) redevient
+        # perime sans prevenir. Si tu gardes une fenetre ouverte, repousse
+        # le secret apres l'avoir fermee.
+        try:
+            ctx.storage_state(path=str(STATE))
+        except Exception as e:
+            print(f"    (sauvegarde de la session impossible : {e.__class__.__name__})")
 
 
 def main():

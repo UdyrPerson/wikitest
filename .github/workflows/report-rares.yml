@@ -11,9 +11,18 @@ name: Rapport cartes UR/L (5 comptes)
 # Declenchement manuel uniquement : c'est une consultation, pas une tache
 # de fond. Un cron ferait tourner un rapport que personne ne lit.
 #
-# Pas de continue-on-error ici : le script gere lui-meme les sessions
-# expirees (il saute le compte concerne et le signale dans une section
-# "Comptes non lus" a la fin du rapport) plutot que d'echouer.
+# Traitement compte par compte, avec sauvegarde du secret juste apres
+# chacun (et non les cinq a la fin) : meme correction que discard.yml et
+# trade.yml le 30/08/2026. Un seul appel pour les cinq comptes chargeait
+# les cinq secrets au demarrage puis les reecrivait tous a la fin, ce qui
+# ecrasait ceux qu'un workflow de booster avait rafraichis entre-temps --
+# la version ecrasee portant un refresh token deja consomme, le compte
+# tombait en 401 au run suivant. Chaque compte ecrit ici un fragment JSON ;
+# une derniere etape les fusionne pour retrouver le tableau agrege.
+#
+# "Lecture seule" ne veut pas dire "sans effet sur la session" : un simple
+# GET suffit a declencher la rotation du jeton cote serveur, donc ce
+# rapport doit sauvegarder et repousser comme les autres.
 
 on:
   workflow_dispatch:
@@ -57,31 +66,64 @@ jobs:
           python -c "import os, pathlib; pathlib.Path('state4.json').write_text(os.environ['WM_TEST4_STORAGE_STATE'])"
           python -c "import os, pathlib; pathlib.Path('state5.json').write_text(os.environ['WM_TEST5_STORAGE_STATE'])"
 
-      - name: Agrege les cartes rares et le solde du collecteur
-        run: |
-          python wm_report_rares.py \
-            compte1=state1.json \
-            compte2=state2.json \
-            collecteur=state3.json \
-            compte4=state4.json \
-            compte5=state5.json \
-            --rarities "${{ inputs.rarities }}" \
-            --balance-of collecteur \
-            | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Jitter aleatoire (0-15s)
+        run: python -c "import random, time; time.sleep(random.uniform(0, 15))"
 
-      # Renvoie les sessions tournees dans leurs secrets. Indispensable :
-      # le serveur fait tourner le refresh token des que le jeton d'acces a
-      # expire, et rejouer un jeton perime fait REVOQUER la session par
-      # Supabase -- sans ca, chaque run tuait la session du run suivant
-      # (cf wm_session_io.py). `if: always()` car la rotation a pu avoir
-      # lieu avant une erreur.
-      - name: Sauvegarde les sessions (rotation des jetons) dans les secrets
+      - name: Compte 1 -> lecture
+        continue-on-error: true
+        run: python wm_report_rares.py compte1=state1.json --rarities "${{ inputs.rarities }}" --json-out frag1.json
+
+      - name: Compte 1 -> sauvegarde la session
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh secret set WM_TEST_STORAGE_STATE --repo ${{ github.repository }} < state1.json
+
+      - name: Compte 2 -> lecture
+        continue-on-error: true
+        run: python wm_report_rares.py compte2=state2.json --rarities "${{ inputs.rarities }}" --json-out frag2.json
+
+      - name: Compte 2 -> sauvegarde la session
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh secret set WM_TEST2_STORAGE_STATE --repo ${{ github.repository }} < state2.json
+
+      - name: Collecteur -> lecture (+ solde)
+        continue-on-error: true
+        run: python wm_report_rares.py collecteur=state3.json --rarities "${{ inputs.rarities }}" --balance-of collecteur --json-out frag3.json
+
+      - name: Collecteur -> sauvegarde la session
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh secret set WM_TEST3_STORAGE_STATE --repo ${{ github.repository }} < state3.json
+
+      - name: Compte 4 -> lecture
+        continue-on-error: true
+        run: python wm_report_rares.py compte4=state4.json --rarities "${{ inputs.rarities }}" --json-out frag4.json
+
+      - name: Compte 4 -> sauvegarde la session
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh secret set WM_TEST4_STORAGE_STATE --repo ${{ github.repository }} < state4.json
+
+      - name: Compte 5 -> lecture
+        continue-on-error: true
+        run: python wm_report_rares.py compte5=state5.json --rarities "${{ inputs.rarities }}" --json-out frag5.json
+
+      - name: Compte 5 -> sauvegarde la session
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh secret set WM_TEST5_STORAGE_STATE --repo ${{ github.repository }} < state5.json
+
+      # Fusionne les fragments produits ci-dessus. `if: always()` et le glob
+      # tolerant : un compte dont la lecture a echoue n'a pas de fragment,
+      # le rapport se fait avec les autres.
+      - name: Agrege les fragments dans le resume du run
+        if: always()
         run: |
-          gh secret set WM_TEST_STORAGE_STATE --repo ${{ github.repository }} < state1.json
-          gh secret set WM_TEST2_STORAGE_STATE --repo ${{ github.repository }} < state2.json
-          gh secret set WM_TEST3_STORAGE_STATE --repo ${{ github.repository }} < state3.json
-          gh secret set WM_TEST4_STORAGE_STATE --repo ${{ github.repository }} < state4.json
-          gh secret set WM_TEST5_STORAGE_STATE --repo ${{ github.repository }} < state5.json
+          python wm_report_rares.py --merge $(ls frag*.json 2>/dev/null) \
+            | tee -a "$GITHUB_STEP_SUMMARY"

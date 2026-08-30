@@ -9,6 +9,18 @@ independant (detach), jamais fermees par ce script -- ferme-les toi-meme
 quand tu veux.
 
     python wm_open_all_sessions.py
+
+ATTENTION -- effet de bord sur l'automatisation GitHub Actions
+--------------------------------------------------------------
+Une fenetre laissee ouverte reste connectee et continue de rafraichir la
+session de son cote. Le serveur fait alors tourner le refresh token, et la
+copie stockee dans le secret GitHub devient perimee : le prochain workflow
+qui l'utilise tombe en 401, et la session est revoquee (cf wm_session_io.py
+-- c'est la cause racine identifiee le 30/08/2026).
+
+Donc : ces fenetres servent a REGARDER un compte ponctuellement. Ferme-les
+quand tu as fini, puis regenere et repousse le secret du ou des comptes
+concernes avant de compter sur les workflows.
 """
 
 import time
@@ -19,10 +31,16 @@ from playwright.sync_api import sync_playwright
 import wm_open_booster as booster
 
 # (label, port CDP dedie, fichier de session)
+# Noms de fichiers alignes le 30/08/2026 sur ceux reellement produits par
+# wm_session_auto.py (WM_TEST_STATE_PATH) : les anciens
+# storage_state_test2/test3.json n'existaient plus, le script echouait donc
+# d'emblee sur "fichier manquant".
 ACCOUNTS = [
-    ("compte test 1 (compte 1)", 9224, Path("storage_state.json")),
-    ("compte test 2 (compte 11)", 9225, Path("storage_state_test2.json")),
-    ("collecteur", 9226, Path("storage_state_test3.json")),
+    ("compte 1", 9224, Path("storage_state.json")),
+    ("compte 2", 9225, Path("storage_state_2.json")),
+    ("collecteur", 9226, Path("storage_state_3.json")),
+    ("compte 4", 9227, Path("storage_state_4.json")),
+    ("compte 5", 9228, Path("storage_state_5.json")),
 ]
 
 

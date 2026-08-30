@@ -160,6 +160,10 @@ def main():
             print(f"    -> {out}")
             pause()
 
+        # Sauvegarde les cookies eventuellement tournes pendant la
+        # navigation, sinon la session stockee devient perimee et le
+        # prochain usage tombe en 401 (cf wm_session_io.py).
+        ctx.storage_state(path=str(STATE))
         browser.close()
 
 

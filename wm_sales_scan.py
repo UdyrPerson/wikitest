@@ -46,6 +46,8 @@ from statistics import mean, median
 
 from playwright.sync_api import sync_playwright
 
+from wm_session_io import ensure_fresh, persist
+
 BASE = "https://www.wiki-masters.com"
 STATE = Path("storage_state.json")
 DATA = Path("data")
@@ -163,8 +165,14 @@ def main():
     print(f"Ecriture au fur et a mesure dans {out_path.resolve()}\n")
 
     with sync_playwright() as p:
-        req_ctx = p.request.new_context(storage_state=str(STATE), base_url=BASE)
+
+# Les scripts qui lisent l'API font tourner le jeton cote serveur comme les
+# autres : sans ensure_fresh/persist, ce script laisse une session perimee
+# derriere lui et le prochain run GitHub Actions tombe en 401
+# (cf wm_session_io.py, cause racine du 30/08/2026).
+        req_ctx = ensure_fresh(p, STATE, BASE)
         scan(req_ctx, candidates, out_path, max_speed=max_speed)
+        persist(req_ctx, STATE)
         req_ctx.dispose()
 
     print(f"\nTermine. Resultats dans {out_path.resolve()}")
