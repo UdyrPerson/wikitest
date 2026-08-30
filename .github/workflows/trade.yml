@@ -1,0 +1,63 @@
+name: Trade WB vers collecteur
+
+# Consolide les wikibidous des deux comptes de test vers collecteur, via
+# le systeme d'echange du jeu : wm_trade_gift_wb.py (offre tout le solde,
+# sans carte) sur les deux comptes de test, puis wm_trade_accept_all.py
+# (accepte toutes les offres en attente) sur collecteur. Pure API, pas de
+# navigateur -- meme principe que auto-booster.yml / auto-booster-2.yml.
+#
+# collecteur doit deja etre "ami" avec les deux comptes de test (verifie
+# manuellement le 30/08/2026 -- le formulaire d'echange le proposait deja
+# automatiquement) : wm_trade_gift_wb.py resout le pseudo via /api/friends
+# et echoue clairement si l'amitie n'existe pas encore.
+#
+# Cron horaire (a :30, decale des cycles de 10 min des deux workflows
+# d'ouverture de boosters) : le solde s'accumule lentement (quelques wb par
+# cycle de defausse), pas besoin de la meme cadence.
+
+on:
+  schedule:
+    - cron: "30 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wm-trade
+  cancel-in-progress: false
+
+jobs:
+  trade:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Installe Playwright (client API seulement, pas de navigateur)
+        run: pip install playwright
+
+      - name: Ecrit les 3 sessions depuis les secrets
+        env:
+          WM_TEST_STORAGE_STATE: ${{ secrets.WM_TEST_STORAGE_STATE }}
+          WM_TEST2_STORAGE_STATE: ${{ secrets.WM_TEST2_STORAGE_STATE }}
+          WM_TEST3_STORAGE_STATE: ${{ secrets.WM_TEST3_STORAGE_STATE }}
+        run: |
+          python -c "import os, pathlib; pathlib.Path('state1.json').write_text(os.environ['WM_TEST_STORAGE_STATE'])"
+          python -c "import os, pathlib; pathlib.Path('state2.json').write_text(os.environ['WM_TEST2_STORAGE_STATE'])"
+          python -c "import os, pathlib; pathlib.Path('state3.json').write_text(os.environ['WM_TEST3_STORAGE_STATE'])"
+
+      - name: Jitter aleatoire (0-15s)
+        run: python -c "import random, time; time.sleep(random.uniform(0, 15))"
+
+      - name: Compte 1 -> offre tout son solde a collecteur
+        run: python wm_trade_gift_wb.py state1.json collecteur
+
+      - name: Compte 2 -> offre tout son solde a collecteur
+        run: python wm_trade_gift_wb.py state2.json collecteur
+
+      - name: collecteur -> accepte toutes les offres en attente
+        run: python wm_trade_accept_all.py state3.json
