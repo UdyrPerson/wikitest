@@ -16,7 +16,7 @@ sans distinction, donc a ne pas utiliser tel quel dans ce cas.
     python wm_trade_accept_all.py <storage_state.json>
 
 Exemple :
-    python wm_trade_accept_all.py storage_state_test3.json
+    python wm_trade_accept_all.py storage_state_3.json
 """
 
 import sys

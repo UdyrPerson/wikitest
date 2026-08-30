@@ -32,9 +32,11 @@ import wm_open_booster as booster
 
 # (label, port CDP dedie, fichier de session)
 # Noms de fichiers alignes le 30/08/2026 sur ceux reellement produits par
-# wm_session_auto.py (WM_TEST_STATE_PATH) : les anciens
-# storage_state_test2/test3.json n'existaient plus, le script echouait donc
-# d'emblee sur "fichier manquant".
+# wm_session_auto.py (WM_TEST_STATE_PATH). Les anciens
+# storage_state_test2/test3.json existaient encore mais portaient des
+# sessions figees a la mi-journee : les utiliser rejouait un refresh token
+# deja consomme, ce qui REVOQUE la session vivante du compte. Ils ont ete
+# supprimes ; ne jamais reintroduire deux fichiers pour un meme compte.
 ACCOUNTS = [
     ("compte 1", 9224, Path("storage_state.json")),
     ("compte 2", 9225, Path("storage_state_2.json")),

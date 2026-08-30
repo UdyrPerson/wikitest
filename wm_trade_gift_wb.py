@@ -17,7 +17,7 @@ amis existants).
 
 Exemple :
     python wm_trade_gift_wb.py storage_state.json collecteur
-    python wm_trade_gift_wb.py storage_state_test2.json collecteur
+    python wm_trade_gift_wb.py storage_state_2.json collecteur
 """
 
 import sys

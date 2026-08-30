@@ -23,7 +23,7 @@ vide une pile entiere ou une unite a la fois, ce motif finit toujours par
 tout vider correctement.
 
     python wm_discard.py                      # storage_state.json, C/PC/R par defaut
-    python wm_discard.py storage_state_test2.json   # sur un autre compte
+    python wm_discard.py storage_state_2.json   # sur un autre compte
     python wm_discard.py --rarities C,PC       # juste ces deux-la
     python wm_discard.py --max N               # s'arrete apres N defausses au total
 
