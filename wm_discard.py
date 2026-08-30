@@ -22,9 +22,16 @@ jusqu'a ce que la liste renvoyee pour cette rarete soit vide. Que discard
 vide une pile entiere ou une unite a la fois, ce motif finit toujours par
 tout vider correctement.
 
-    python wm_discard.py                      # C, PC, R (par defaut)
+    python wm_discard.py                      # storage_state.json, C/PC/R par defaut
+    python wm_discard.py storage_state_test2.json   # sur un autre compte
     python wm_discard.py --rarities C,PC       # juste ces deux-la
     python wm_discard.py --max N               # s'arrete apres N defausses au total
+
+Le fichier de session est le premier argument positionnel (celui qui ne
+commence pas par "--"), storage_state.json par defaut si omis -- meme
+convention que wm_trade_gift_wb.py / wm_trade_accept_all.py, ajoutee le
+30/08/2026 quand la defausse est devenue un workflow independant capable
+de traiter plusieurs comptes dans le meme run.
 
 Respecte DELAY (cf CLAUDE.md) : sequentiel, >=2s entre deux appels.
 """
@@ -38,7 +45,6 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 BASE = "https://www.wiki-masters.com"
-STATE = Path("storage_state.json")
 
 DELAY = (2.0, 3.0)
 DEFAULT_RARITIES = ["C", "PC", "R"]
@@ -91,8 +97,24 @@ def discard_rarity(req_ctx, rarity: str, remaining_budget) -> int:
 
 
 def main():
-    if not STATE.exists():
-        raise SystemExit("Pas de storage_state.json — lance d'abord wm_session.py")
+    # Distingue l'argument positionnel (fichier de session) des flags a
+    # valeur (--rarities X, --max N) : sauter la valeur qui suit chacun
+    # de ces flags plutot que de la prendre par erreur pour le fichier.
+    positional = []
+    skip_next = False
+    for a in sys.argv[1:]:
+        if skip_next:
+            skip_next = False
+            continue
+        if a in ("--rarities", "--max"):
+            skip_next = True
+            continue
+        if not a.startswith("--"):
+            positional.append(a)
+    state_path = Path(positional[0]) if positional else Path("storage_state.json")
+
+    if not state_path.exists():
+        raise SystemExit(f"{state_path} introuvable — lance d'abord wm_session.py ou wm_session_auto.py.")
 
     rarities = DEFAULT_RARITIES
     if "--rarities" in sys.argv:
@@ -107,7 +129,7 @@ def main():
     remaining_budget = [max_total if max_total is not None else float("inf")]
 
     with sync_playwright() as p:
-        req_ctx = p.request.new_context(storage_state=str(STATE), base_url=BASE)
+        req_ctx = p.request.new_context(storage_state=str(state_path), base_url=BASE)
 
         total = 0
         for rarity in rarities:

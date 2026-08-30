@@ -52,6 +52,3 @@ jobs:
 
       - name: Ouvre tous les boosters disponibles (mode API, sans navigateur)
         run: python wm_open_booster.py --api --count 10
-
-      - name: Defausse les cartes C/PC/R (plafond de securite par run)
-        run: python wm_discard.py --rarities C,PC,R --max 50

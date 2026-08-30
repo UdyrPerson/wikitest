@@ -1,0 +1,59 @@
+name: Defausse C/PC/R (comptes test)
+
+# Defausse les cartes Communes/Peu Communes/Rares accumulees sur les deux
+# comptes de test (wm_discard.py, filtre strict --rarities C,PC,R --
+# jamais SR/UR/L). Separe des workflows d'ouverture de boosters le
+# 30/08/2026 (etait avant une etape couplee dans auto-booster.yml /
+# auto-booster-2.yml) : tourne desormais sur son propre cron,
+# independamment du rythme d'ouverture.
+#
+# Pure API (comme les autres workflows du projet), pas de navigateur.
+#
+# Cron ~90 min comme les workflows de boosters, decale de 20 min par
+# rapport a auto-booster.yml pour laisser le temps a un cycle d'ouverture
+# de s'executer avant de nettoyer -- mais ce n'est pas une dependance
+# stricte, ce workflow defausse simplement ce qui est present au moment
+# ou il tourne, quelle qu'en soit l'origine.
+
+on:
+  schedule:
+    - cron: "20 0,3,6,9,12,15,18,21 * * *"
+    - cron: "50 1,4,7,10,13,16,19,22 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wm-discard
+  cancel-in-progress: false
+
+jobs:
+  discard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Installe Playwright (client API seulement, pas de navigateur)
+        run: pip install playwright
+
+      - name: Ecrit les sessions des deux comptes de test depuis les secrets
+        env:
+          WM_TEST_STORAGE_STATE: ${{ secrets.WM_TEST_STORAGE_STATE }}
+          WM_TEST2_STORAGE_STATE: ${{ secrets.WM_TEST2_STORAGE_STATE }}
+        run: |
+          python -c "import os, pathlib; pathlib.Path('state1.json').write_text(os.environ['WM_TEST_STORAGE_STATE'])"
+          python -c "import os, pathlib; pathlib.Path('state2.json').write_text(os.environ['WM_TEST2_STORAGE_STATE'])"
+
+      - name: Jitter aleatoire (0-15s)
+        run: python -c "import random, time; time.sleep(random.uniform(0, 15))"
+
+      - name: Compte 1 -> defausse C/PC/R
+        run: python wm_discard.py state1.json --rarities C,PC,R --max 50
+
+      - name: Compte 2 -> defausse C/PC/R
+        run: python wm_discard.py state2.json --rarities C,PC,R --max 50
