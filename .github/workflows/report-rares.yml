@@ -1,0 +1,71 @@
+name: Rapport cartes UR/L (5 comptes)
+
+# Workflow purement informationnel : ne fait que des GET, n'ouvre rien, ne
+# defausse rien, n'echange rien. Agrege les cartes UR et L des cinq comptes
+# et affiche le solde de wikibidous de collecteur (le compte collecteur,
+# cf trade.yml).
+#
+# Le rapport est ecrit dans le resume du run ($GITHUB_STEP_SUMMARY) : il
+# s'affiche directement sur la page de l'execution, sans avoir a ouvrir les
+# logs -- lisible depuis un telephone.
+#
+# Declenchement manuel uniquement : c'est une consultation, pas une tache
+# de fond. Un cron ferait tourner un rapport que personne ne lit.
+#
+# Pas de continue-on-error ici : le script gere lui-meme les sessions
+# expirees (il saute le compte concerne et le signale dans une section
+# "Comptes non lus" a la fin du rapport) plutot que d'echouer.
+
+on:
+  workflow_dispatch:
+    inputs:
+      rarities:
+        description: "Raretes a lister (separees par des virgules)"
+        required: false
+        default: "UR,L"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wm-report-rares
+  cancel-in-progress: false
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Installe Playwright (client API seulement, pas de navigateur)
+        run: pip install playwright
+
+      - name: Ecrit les sessions des cinq comptes depuis les secrets
+        env:
+          WM_TEST_STORAGE_STATE: ${{ secrets.WM_TEST_STORAGE_STATE }}
+          WM_TEST2_STORAGE_STATE: ${{ secrets.WM_TEST2_STORAGE_STATE }}
+          WM_TEST3_STORAGE_STATE: ${{ secrets.WM_TEST3_STORAGE_STATE }}
+          WM_TEST4_STORAGE_STATE: ${{ secrets.WM_TEST4_STORAGE_STATE }}
+          WM_TEST5_STORAGE_STATE: ${{ secrets.WM_TEST5_STORAGE_STATE }}
+        run: |
+          python -c "import os, pathlib; pathlib.Path('state1.json').write_text(os.environ['WM_TEST_STORAGE_STATE'])"
+          python -c "import os, pathlib; pathlib.Path('state2.json').write_text(os.environ['WM_TEST2_STORAGE_STATE'])"
+          python -c "import os, pathlib; pathlib.Path('state3.json').write_text(os.environ['WM_TEST3_STORAGE_STATE'])"
+          python -c "import os, pathlib; pathlib.Path('state4.json').write_text(os.environ['WM_TEST4_STORAGE_STATE'])"
+          python -c "import os, pathlib; pathlib.Path('state5.json').write_text(os.environ['WM_TEST5_STORAGE_STATE'])"
+
+      - name: Agrege les cartes rares et le solde de collecteur
+        run: |
+          python wm_report_rares.py \
+            compte1=state1.json \
+            compte2=state2.json \
+            collecteur=state3.json \
+            compte 4=state4.json \
+            compte 5=state5.json \
+            --rarities "${{ inputs.rarities }}" \
+            --balance-of collecteur \
+            | tee -a "$GITHUB_STEP_SUMMARY"
