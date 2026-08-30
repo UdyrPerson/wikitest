@@ -1,4 +1,4 @@
-name: Defausse C/PC/R (3 comptes)
+name: Defausse C/PC/R (5 comptes)
 
 # Defausse les cartes Communes/Peu Communes/Rares accumulees sur les trois
 # comptes (wm_discard.py, filtre strict --rarities C,PC,R -- jamais
@@ -43,15 +43,19 @@ jobs:
       - name: Installe Playwright (client API seulement, pas de navigateur)
         run: pip install playwright
 
-      - name: Ecrit les sessions des trois comptes depuis les secrets
+      - name: Ecrit les sessions des cinq comptes depuis les secrets
         env:
           WM_TEST_STORAGE_STATE: ${{ secrets.WM_TEST_STORAGE_STATE }}
           WM_TEST2_STORAGE_STATE: ${{ secrets.WM_TEST2_STORAGE_STATE }}
           WM_TEST3_STORAGE_STATE: ${{ secrets.WM_TEST3_STORAGE_STATE }}
+          WM_TEST4_STORAGE_STATE: ${{ secrets.WM_TEST4_STORAGE_STATE }}
+          WM_TEST5_STORAGE_STATE: ${{ secrets.WM_TEST5_STORAGE_STATE }}
         run: |
           python -c "import os, pathlib; pathlib.Path('state1.json').write_text(os.environ['WM_TEST_STORAGE_STATE'])"
           python -c "import os, pathlib; pathlib.Path('state2.json').write_text(os.environ['WM_TEST2_STORAGE_STATE'])"
           python -c "import os, pathlib; pathlib.Path('state3.json').write_text(os.environ['WM_TEST3_STORAGE_STATE'])"
+          python -c "import os, pathlib; pathlib.Path('state4.json').write_text(os.environ['WM_TEST4_STORAGE_STATE'])"
+          python -c "import os, pathlib; pathlib.Path('state5.json').write_text(os.environ['WM_TEST5_STORAGE_STATE'])"
 
       - name: Jitter aleatoire (0-15s)
         run: python -c "import random, time; time.sleep(random.uniform(0, 15))"
@@ -64,3 +68,9 @@ jobs:
 
       - name: collecteur -> defausse C/PC/R
         run: python wm_discard.py state3.json --rarities C,PC,R
+
+      - name: compte 4 -> defausse C/PC/R
+        run: python wm_discard.py state4.json --rarities C,PC,R
+
+      - name: compte 5 -> defausse C/PC/R
+        run: python wm_discard.py state5.json --rarities C,PC,R

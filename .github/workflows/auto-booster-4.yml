@@ -1,0 +1,49 @@
+name: Auto-ouverture booster WikiMasters (compte 4)
+
+# Meme logique que auto-booster.yml (voir ce fichier pour les details
+# complets), pour le 4e compte (compte 4). Fichier separe comme les
+# precedents.
+#
+# Decale de 15 min par rapport au premier compte pour que les cinq comptes
+# ne se declenchent jamais au meme instant (0/45/60/15/75 min sur le cycle
+# de 90 min) : 0:15, 1:45, 3:15, 4:45... en alternant minute 15 (heures
+# 0,3,6...) et minute 45 (heures 1,4,7...).
+
+on:
+  schedule:
+    - cron: "15 0,3,6,9,12,15,18,21 * * *"
+    - cron: "45 1,4,7,10,13,16,19,22 * * *"
+  workflow_dispatch: {}
+  workflow_call: {}  # appelable depuis open-all-boosters.yml (secrets: inherit)
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wm-auto-booster-4
+  cancel-in-progress: false
+
+jobs:
+  open-booster:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Installe Playwright (client API seulement, pas de navigateur)
+        run: pip install playwright
+
+      - name: Ecrit la session de compte 4 depuis le secret
+        env:
+          WM_TEST4_STORAGE_STATE: ${{ secrets.WM_TEST4_STORAGE_STATE }}
+        run: |
+          python -c "import os, pathlib; pathlib.Path('storage_state.json').write_text(os.environ['WM_TEST4_STORAGE_STATE'])"
+
+      - name: Jitter aleatoire (0-15s) avant l'appel
+        run: python -c "import random, time; time.sleep(random.uniform(0, 15))"
+
+      - name: Ouvre tous les boosters disponibles (mode API, sans navigateur)
+        run: python wm_open_booster.py --api --count 10

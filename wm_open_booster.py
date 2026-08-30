@@ -592,34 +592,39 @@ def connect_with_retry(p, port: int, attempts: int = 20, delay: float = 0.5):
     raise SystemExit(f"Impossible de se connecter au Chrome lance (port {port}) : {last_err}")
 
 
-def attach_chrome(p):
-    """Se branche sur la fenetre persistante de ce projet (CDP_PORT). La
-    lance si elle n'existe pas encore."""
+def attach_chrome(p, port: int = CDP_PORT):
+    """Se branche sur une fenetre persistante (port CDP donne, CDP_PORT
+    par defaut pour rester compatible avec les appels existants). La
+    lance si elle n'existe pas encore. Utiliser un port different par
+    compte permet plusieurs fenetres persistantes independantes (voir
+    wm_open_all_sessions.py)."""
     try:
-        return p.chromium.connect_over_cdp(f"http://localhost:{CDP_PORT}")
+        return p.chromium.connect_over_cdp(f"http://localhost:{port}")
     except Exception:
-        print(f"Pas de Chrome sur le port {CDP_PORT} — on en lance un nouveau.")
-        launch_independent_chrome(CDP_PORT)
-        return connect_with_retry(p, CDP_PORT)
+        print(f"Pas de Chrome sur le port {port} — on en lance un nouveau.")
+        launch_independent_chrome(port)
+        return connect_with_retry(p, port)
 
 
-def get_page(browser):
+def get_page(browser, state_path: Path = None):
     """Reutilise l'onglet WikiMasters deja ouvert s'il existe (meme
     contexte, memes cookies, meme fenetre a l'ecran). Sinon, injecte les
-    cookies de storage_state.json dans le contexte PAR DEFAUT du Chrome
-    connecte (browser.contexts[0]) plutot que d'appeler
-    browser.new_context() : un contexte cree ainsi via CDP est ferme par
-    Playwright des que la connexion se termine (constate empiriquement —
-    la fenetre disparaissait juste apres la fin du script), alors que le
-    contexte par defaut d'un Chrome deja lance survit. Meme principe que
-    wm_session_cdp.py, qui reutilise toujours browser.contexts[0]."""
+    cookies du fichier de session donne (storage_state.json par defaut)
+    dans le contexte PAR DEFAUT du Chrome connecte (browser.contexts[0])
+    plutot que d'appeler browser.new_context() : un contexte cree ainsi
+    via CDP est ferme par Playwright des que la connexion se termine
+    (constate empiriquement — la fenetre disparaissait juste apres la fin
+    du script), alors que le contexte par defaut d'un Chrome deja lance
+    survit. Meme principe que wm_session_cdp.py, qui reutilise toujours
+    browser.contexts[0]."""
+    state_path = state_path or STATE
     for ctx in browser.contexts:
         for pg in ctx.pages:
             if urlparse(pg.url).netloc == HOST:
                 return ctx, pg
 
     ctx = browser.contexts[0] if browser.contexts else browser.new_context()
-    state = json.loads(STATE.read_text(encoding="utf-8"))
+    state = json.loads(state_path.read_text(encoding="utf-8"))
     if state.get("cookies"):
         ctx.add_cookies(state["cookies"])
 

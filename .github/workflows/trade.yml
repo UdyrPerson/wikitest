@@ -1,15 +1,15 @@
 name: Trade WB vers collecteur
 
-# Consolide les wikibidous des deux comptes de test vers collecteur, via
-# le systeme d'echange du jeu : wm_trade_gift_wb.py (offre tout le solde,
-# sans carte) sur les deux comptes de test, puis wm_trade_accept_all.py
+# Consolide les wikibidous des quatre comptes emetteurs vers collecteur,
+# via le systeme d'echange du jeu : wm_trade_gift_wb.py (offre tout le
+# solde, sans carte) sur chaque emetteur, puis wm_trade_accept_all.py
 # (accepte toutes les offres en attente) sur collecteur. Pure API, pas de
 # navigateur -- meme principe que auto-booster.yml / auto-booster-2.yml.
 #
-# collecteur doit deja etre "ami" avec les deux comptes de test (verifie
-# manuellement le 30/08/2026 -- le formulaire d'echange le proposait deja
-# automatiquement) : wm_trade_gift_wb.py resout le pseudo via /api/friends
-# et echoue clairement si l'amitie n'existe pas encore.
+# collecteur doit deja etre "ami" avec chaque compte emetteur :
+# wm_trade_gift_wb.py resout le pseudo via /api/friends et echoue
+# clairement si l'amitie n'existe pas encore. Amities verifiees
+# "accepted" pour les quatre emetteurs le 30/08/2026.
 #
 # Cron horaire (a :30, decale des cycles de 10 min des deux workflows
 # d'ouverture de boosters) : le solde s'accumule lentement (quelques wb par
@@ -40,15 +40,19 @@ jobs:
       - name: Installe Playwright (client API seulement, pas de navigateur)
         run: pip install playwright
 
-      - name: Ecrit les 3 sessions depuis les secrets
+      - name: Ecrit les 5 sessions depuis les secrets
         env:
           WM_TEST_STORAGE_STATE: ${{ secrets.WM_TEST_STORAGE_STATE }}
           WM_TEST2_STORAGE_STATE: ${{ secrets.WM_TEST2_STORAGE_STATE }}
           WM_TEST3_STORAGE_STATE: ${{ secrets.WM_TEST3_STORAGE_STATE }}
+          WM_TEST4_STORAGE_STATE: ${{ secrets.WM_TEST4_STORAGE_STATE }}
+          WM_TEST5_STORAGE_STATE: ${{ secrets.WM_TEST5_STORAGE_STATE }}
         run: |
           python -c "import os, pathlib; pathlib.Path('state1.json').write_text(os.environ['WM_TEST_STORAGE_STATE'])"
           python -c "import os, pathlib; pathlib.Path('state2.json').write_text(os.environ['WM_TEST2_STORAGE_STATE'])"
           python -c "import os, pathlib; pathlib.Path('state3.json').write_text(os.environ['WM_TEST3_STORAGE_STATE'])"
+          python -c "import os, pathlib; pathlib.Path('state4.json').write_text(os.environ['WM_TEST4_STORAGE_STATE'])"
+          python -c "import os, pathlib; pathlib.Path('state5.json').write_text(os.environ['WM_TEST5_STORAGE_STATE'])"
 
       - name: Jitter aleatoire (0-15s)
         run: python -c "import random, time; time.sleep(random.uniform(0, 15))"
@@ -58,6 +62,12 @@ jobs:
 
       - name: Compte 2 -> offre tout son solde a collecteur
         run: python wm_trade_gift_wb.py state2.json collecteur
+
+      - name: compte 4 -> offre tout son solde a collecteur
+        run: python wm_trade_gift_wb.py state4.json collecteur
+
+      - name: compte 5 -> offre tout son solde a collecteur
+        run: python wm_trade_gift_wb.py state5.json collecteur
 
       - name: collecteur -> accepte toutes les offres en attente
         run: python wm_trade_accept_all.py state3.json
