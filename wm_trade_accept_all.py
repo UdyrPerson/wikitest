@@ -45,7 +45,15 @@ def accept_pending(req):
     for i, t in enumerate(pending, 1):
         initiator = t.get("initiator", {}).get("username", "?")
         wb = t.get("initiator_wikibidous", 0)
-        resp = req.patch(f"/api/trades/{t['id']}", data={"action": "accept"})
+        # timeout a 90s comme la creation d'echange (wm_trade_gift_wb.py) :
+        # les endpoints /api/trades sont lents et le defaut de 30s a fait
+        # echouer l'acceptation le 30/08/2026 alors que les offres avaient
+        # bien ete envoyees. Un timeout ici est le pire cas -- l'echange
+        # aboutit peut-etre cote serveur, mais on abandonne la reponse (et
+        # les cookies eventuellement tournes qu'elle portait).
+        resp = req.patch(
+            f"/api/trades/{t['id']}", data={"action": "accept"}, timeout=90000
+        )
         if resp.status >= 400:
             print(f"  [{i}] echec sur offre de {initiator} ({wb} wb) : {resp.status} {resp.text()[:200]}")
         else:
