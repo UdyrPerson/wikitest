@@ -57,10 +57,10 @@ jobs:
         run: python -c "import random, time; time.sleep(random.uniform(0, 15))"
 
       - name: Compte 1 -> defausse C/PC/R
-        run: python wm_discard.py state1.json --rarities C,PC,R --max 50
+        run: python wm_discard.py state1.json --rarities C,PC,R
 
       - name: Compte 2 -> defausse C/PC/R
-        run: python wm_discard.py state2.json --rarities C,PC,R --max 50
+        run: python wm_discard.py state2.json --rarities C,PC,R
 
       - name: collecteur -> defausse C/PC/R
-        run: python wm_discard.py state3.json --rarities C,PC,R --max 50
+        run: python wm_discard.py state3.json --rarities C,PC,R
