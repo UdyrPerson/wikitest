@@ -80,20 +80,35 @@ import time
 from pathlib import Path
 from urllib.parse import urlparse
 
-# Flags Windows necessaires pour que Chrome survive a la fin de CE script.
-# Sans eux, un enfant lance par subprocess.Popen reste rattache au job
-# Windows du processus courant et se fait tuer avec lui des que ce
-# processus Python se termine (verifie empiriquement : le Chrome persistant
-# disparaissait des la fin du script alors que connect_over_cdp avait
-# reussi pendant son execution). CREATE_BREAKAWAY_FROM_JOB en sort ; les
-# deux autres evitent d'heriter la console/le groupe de process du parent.
-_DETACH_FLAGS = (
-    subprocess.CREATE_BREAKAWAY_FROM_JOB
-    | subprocess.DETACHED_PROCESS
-    | subprocess.CREATE_NEW_PROCESS_GROUP
-)
-
 from playwright.sync_api import sync_playwright
+
+
+def _detach_flags():
+    """Flags Windows necessaires pour que Chrome survive a la fin de CE
+    script. Sans eux, un enfant lance par subprocess.Popen reste rattache
+    au job Windows du processus courant et se fait tuer avec lui des que
+    ce processus Python se termine (verifie empiriquement : le Chrome
+    persistant disparaissait des la fin du script alors que
+    connect_over_cdp avait reussi pendant son execution).
+    CREATE_BREAKAWAY_FROM_JOB en sort ; les deux autres evitent d'heriter
+    la console/le groupe de process du parent.
+
+    Calcule a la demande (pas au niveau module) et uniquement sur Windows :
+    ces constantes n'existent pas sous Linux/macOS, et ce module doit
+    pouvoir etre importe partout -- le mode --api (utilise par le workflow
+    GitHub Actions, qui tourne sur un runner Linux) n'a jamais besoin de
+    lancer Chrome, donc ne doit jamais toucher a ces attributs."""
+    if not hasattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB"):
+        raise SystemExit(
+            "Lancement de Chrome persistant demande (--click/--recon ou par "
+            "defaut) sur une plateforme non-Windows : non supporte. Utilise "
+            "--api sur cette machine."
+        )
+    return (
+        subprocess.CREATE_BREAKAWAY_FROM_JOB
+        | subprocess.DETACHED_PROCESS
+        | subprocess.CREATE_NEW_PROCESS_GROUP
+    )
 
 BASE = "https://www.wiki-masters.com"
 HOST = urlparse(BASE).netloc
@@ -281,9 +296,42 @@ def capture_network(ctx, page):
     return log, lambda: ctx.remove_listener("response", on_response)
 
 
+def handle_cloudflare_challenge(page, wait_after_ms: int = 2500) -> bool:
+    """Detecte un challenge Cloudflare Turnstile (le meme mecanisme que sur
+    /login, verifie le 30/08/2026 dans wm_session_auto.py) et tente de le
+    resoudre. D'apres l'usage, il peut apparaitre de temps en temps sur
+    /pulls aussi, pas seulement a la connexion ("une fenetre en haut pour
+    verifier qu'on est humain"). Souvent resolu tout seul en quelques
+    secondes avec les flags anti-detection deja utilises pour lancer
+    Chrome (observe empiriquement : "Succes !" sans clic) ; on tente un
+    clic explicite sur la case a cocher en repli si elle est visible.
+    Retourne True si un challenge a ete detecte (resolu ou non) -- appelant
+    peut alors reessayer l'action qui a echoue."""
+    cf_frame = None
+    for f in page.frames:
+        if "challenges.cloudflare.com" in f.url:
+            cf_frame = f
+            break
+    if cf_frame is None:
+        return False
+
+    print("  Challenge Cloudflare detecte (verification humaine) — tentative de resolution...")
+    page.wait_for_timeout(wait_after_ms)
+    try:
+        checkbox = cf_frame.locator("input[type='checkbox']")
+        if checkbox.count() > 0 and checkbox.first.is_visible():
+            checkbox.first.click(timeout=3000)
+            print("  Clic sur la case a cocher du challenge.")
+            page.wait_for_timeout(wait_after_ms)
+    except Exception as e:
+        print(f"  Pas de case a cliquer ou deja resolu ({e.__class__.__name__}).")
+    return True
+
+
 def recon(page, stamp):
     """Repere les candidats a l'ouverture, prend une capture d'ecran, les
     affiche. Ne clique jamais rien. Retourne la liste des candidats."""
+    handle_cloudflare_challenge(page)
     SCREENSHOTS.mkdir(parents=True, exist_ok=True)
     shot = SCREENSHOTS / f"before-{stamp}.png"
     page.screenshot(path=str(shot))
@@ -323,6 +371,17 @@ def open_and_reveal(ctx, page, candidates, stamp) -> bool:
         log.close()
         return False
 
+    # Le clic d'ouverture peut declencher une verification "je suis
+    # humain" (cf CLAUDE.md / retour d'usage) : si elle apparait, on la
+    # laisse se resoudre puis on reclique sur le paquet (le premier clic a
+    # pu etre absorbe par le challenge plutot que par le paquet).
+    if handle_cloudflare_challenge(page):
+        try:
+            target.click(timeout=5000)
+            print("  Reclique sur le paquet apres resolution du challenge.")
+        except Exception:
+            pass
+
     print(f"Clique. Attente {REVEAL_WAIT}s pour l'animation d'ouverture...")
     time.sleep(REVEAL_WAIT)
 
@@ -332,6 +391,7 @@ def open_and_reveal(ctx, page, candidates, stamp) -> bool:
 
     continued = False
     for i in range(1, MAX_NEXT_CLICKS + 1):
+        handle_cloudflare_challenge(page)
         try:
             continue_btn = page.get_by_role("button", name=CONTINUE_PATTERN).first
             if continue_btn.is_visible(timeout=500):
@@ -428,7 +488,7 @@ def launch_independent_chrome(port: int) -> None:
             "--no-first-run",
             "--no-default-browser-check",
         ],
-        creationflags=_DETACH_FLAGS,
+        creationflags=_detach_flags(),
         close_fds=True,
     )
 
