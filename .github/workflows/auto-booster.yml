@@ -8,10 +8,10 @@ name: Auto-ouverture booster WikiMasters (compte test)
 #
 # Cron GitHub Actions : pas garanti a la minute pres (peut etre retarde en
 # periode de charge), et l'intervalle mini documente est 5 minutes. 15 min
-# ici pour rester large. Un jitter aleatoire est ajoute avant l'appel pour
-# eviter un motif parfaitement regulier (meme logique que wm_auto_booster.py
-# en local -- un cron pile a l'heure est justement le signal le plus facile
-# a reperer pour un anti-bot).
+# ici pour rester large. Un jitter aleatoire (0-15s) est ajoute avant
+# l'appel pour eviter un motif parfaitement regulier (meme logique que
+# wm_auto_booster.py en local -- un cron pile a l'heure est justement le
+# signal le plus facile a reperer pour un anti-bot).
 
 on:
   schedule:
@@ -44,8 +44,8 @@ jobs:
         run: |
           python -c "import os, pathlib; pathlib.Path('storage_state.json').write_text(os.environ['WM_TEST_STORAGE_STATE'])"
 
-      - name: Jitter aleatoire (0-180s) avant l'appel
-        run: python -c "import random, time; time.sleep(random.uniform(0, 180))"
+      - name: Jitter aleatoire (0-15s) avant l'appel
+        run: python -c "import random, time; time.sleep(random.uniform(0, 15))"
 
       - name: Ouvre un booster (mode API, sans navigateur)
         run: python wm_open_booster.py --api
