@@ -31,6 +31,7 @@ on:
     - cron: "0 0,3,6,9,12,15,18,21 * * *"
     - cron: "30 1,4,7,10,13,16,19,22 * * *"
   workflow_dispatch: {}  # bouton "Run workflow" manuel, utile pour tester
+  workflow_call: {}  # appelable depuis open-all-boosters.yml (secrets: inherit)
 
 permissions:
   contents: read

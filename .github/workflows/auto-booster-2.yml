@@ -20,6 +20,7 @@ on:
     - cron: "45 0,3,6,9,12,15,18,21 * * *"
     - cron: "15 2,5,8,11,14,17,20,23 * * *"
   workflow_dispatch: {}
+  workflow_call: {}  # appelable depuis open-all-boosters.yml (secrets: inherit)
 
 permissions:
   contents: read

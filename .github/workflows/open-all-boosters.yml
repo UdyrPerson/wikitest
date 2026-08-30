@@ -1,0 +1,40 @@
+name: Ouvre tous les boosters (tous comptes)
+
+# Orchestrateur : declenche tous les workflows d'ouverture de booster d'un
+# coup (aujourd'hui : compte 1, compte 2, collecteur), plutot que de les
+# lancer un par un manuellement. Chaque job appelle le workflow existant
+# comme "reusable workflow" (uses: ./.github/workflows/...) avec
+# `secrets: inherit`, qui transmet automatiquement les secrets du depot
+# appelant sans avoir a les enumerer -- pas besoin d'un token
+# supplementaire (contrairement a un declenchement via `gh workflow run`
+# depuis un job, qui aurait demande un PAT stocke en secret).
+#
+# Scalable : ajouter un nouveau compte = ajouter un nouveau job "uses:"
+# ci-dessous pointant sur son fichier de workflow, rien d'autre a changer
+# ici.
+#
+# Les jobs tournent en parallele par defaut (pas de "needs:" entre eux) --
+# volontaire pour un declenchement manuel ponctuel, mais ca veut dire que
+# les trois comptes tapent l'API en meme temps dans ce cas precis, sans
+# le decalage habituel des crons individuels. A eviter en usage frequent/
+# automatise ; reserve a un declenchement manuel occasionnel.
+#
+# Pas de declenchement automatique (schedule) ici : chaque workflow garde
+# son propre cron independant et decale (voir chacun) ; celui-ci est pour
+# un lancement manuel groupe.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  compte-1:
+    uses: ./.github/workflows/auto-booster.yml
+    secrets: inherit
+
+  compte-2:
+    uses: ./.github/workflows/auto-booster-2.yml
+    secrets: inherit
+
+  collecteur:
+    uses: ./.github/workflows/auto-booster-3.yml
+    secrets: inherit
