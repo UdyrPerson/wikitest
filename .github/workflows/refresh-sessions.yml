@@ -1,0 +1,108 @@
+name: Reinitialise les sessions (tous comptes)
+
+# A lancer manuellement (bouton "Run workflow" sur github.com, marche depuis
+# un telephone) quand un workflow d'ouverture/defausse plante avec un 401/403
+# "session expiree" et que tu n'as pas ta machine sous la main pour relancer
+# wm_session_auto.py toi-meme.
+#
+# Reproduit exactement ce que fait wm_session_auto.py en local (connexion
+# email/mot de passe + resolution Cloudflare Turnstile par clic DOM ou repli
+# coordonnees), mais depuis un runner GitHub Actions : Chrome tourne en mode
+# "tete" (headless=False, comme en local) sous un faux affichage Xvfb, car
+# Turnstile se comporte differemment en vrai headless.
+#
+# Reserve importante : Cloudflare se mefie generalement plus des IP de
+# datacenter (dont celles des runners GitHub Actions) que d'une IP
+# residentielle. Ce workflow peut donc echouer plus souvent que le meme
+# script lance depuis la machine perso -- si ca echoue ici, la solution de
+# repli reste de relancer wm_session_auto.py en local une fois.
+#
+# Une fois la nouvelle session obtenue, la pousse elle-meme comme secret du
+# depot via `gh secret set`, avec GH_ACTIONS_PAT (jeton personnel, scope
+# repo) puisque le GITHUB_TOKEN par defaut ne peut pas modifier les secrets
+# d'un depot.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  refresh-compte-1:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Installe Playwright + Chrome + Xvfb
+        run: |
+          pip install playwright
+          playwright install --with-deps chrome
+          sudo apt-get update && sudo apt-get install -y xvfb
+
+      - name: Connexion automatique compte 1 (Turnstile via Xvfb)
+        env:
+          WM_TEST_EMAIL: ${{ secrets.WM_TEST_EMAIL }}
+          WM_TEST_PASSWORD: ${{ secrets.WM_TEST_PASSWORD }}
+        run: xvfb-run -a python wm_session_auto.py
+
+      - name: Pousse la nouvelle session comme secret du depot
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh secret set WM_TEST_STORAGE_STATE --repo ${{ github.repository }} < storage_state.json
+
+  refresh-compte-2:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Installe Playwright + Chrome + Xvfb
+        run: |
+          pip install playwright
+          playwright install --with-deps chrome
+          sudo apt-get update && sudo apt-get install -y xvfb
+
+      - name: Connexion automatique compte 2 (Turnstile via Xvfb)
+        env:
+          WM_TEST_EMAIL: ${{ secrets.WM_TEST2_EMAIL }}
+          WM_TEST_PASSWORD: ${{ secrets.WM_TEST2_PASSWORD }}
+        run: xvfb-run -a python wm_session_auto.py
+
+      - name: Pousse la nouvelle session comme secret du depot
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh secret set WM_TEST2_STORAGE_STATE --repo ${{ github.repository }} < storage_state.json
+
+  refresh-collecteur:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Installe Playwright + Chrome + Xvfb
+        run: |
+          pip install playwright
+          playwright install --with-deps chrome
+          sudo apt-get update && sudo apt-get install -y xvfb
+
+      - name: Connexion automatique collecteur (Turnstile via Xvfb)
+        env:
+          WM_TEST_EMAIL: ${{ secrets.WM_TEST3_EMAIL }}
+          WM_TEST_PASSWORD: ${{ secrets.WM_TEST3_PASSWORD }}
+        run: xvfb-run -a python wm_session_auto.py
+
+      - name: Pousse la nouvelle session comme secret du depot
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh secret set WM_TEST3_STORAGE_STATE --repo ${{ github.repository }} < storage_state.json
