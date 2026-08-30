@@ -1,15 +1,19 @@
-name: Trade WB vers collecteur
+name: Trade WB vers le compte collecteur
 
-# Consolide les wikibidous des quatre comptes emetteurs vers collecteur,
-# via le systeme d'echange du jeu : wm_trade_gift_wb.py (offre tout le
-# solde, sans carte) sur chaque emetteur, puis wm_trade_accept_all.py
-# (accepte toutes les offres en attente) sur collecteur. Pure API, pas de
-# navigateur -- meme principe que auto-booster.yml / auto-booster-2.yml.
+# Consolide les wikibidous des quatre comptes emetteurs vers le compte
+# collecteur (compte 3), via le systeme d'echange du jeu :
+# wm_trade_gift_wb.py (offre tout le solde, sans carte) sur chaque
+# emetteur, puis wm_trade_accept_all.py (accepte toutes les offres en
+# attente) sur le collecteur. Pure API, pas de navigateur -- meme principe
+# que auto-booster.yml / auto-booster-2.yml.
 #
-# collecteur doit deja etre "ami" avec chaque compte emetteur :
-# wm_trade_gift_wb.py resout le pseudo via /api/friends et echoue
-# clairement si l'amitie n'existe pas encore. Amities verifiees
-# "accepted" pour les quatre emetteurs le 30/08/2026.
+# Le pseudo du collecteur vit dans le secret WM_TRADE_RECIPIENT plutot
+# qu'en dur ici : c'est le seul pseudo dont le script a fonctionnellement
+# besoin (wm_trade_gift_wb.py le resout via /api/friends), et le garder
+# hors du code evite de publier le lien entre les comptes.
+#
+# Le collecteur doit deja etre "ami" avec chaque compte emetteur : le
+# script echoue clairement si l'amitie n'existe pas encore.
 #
 # Cadence 50 min (etait horaire), alignee sur les autres workflows : un
 # cycle plus court que l'heure evite de tomber systematiquement apres
@@ -70,21 +74,29 @@ jobs:
       # avoir une session morte au moment du run. Sans ca, son 401 arretait
       # le job et empechait les autres d'envoyer -- et surtout empechait
       # l'etape d'acceptation ci-dessous de s'executer.
-      - name: Compte 1 -> offre tout son solde a collecteur
+      - name: Compte 1 -> offre tout son solde au collecteur
         continue-on-error: true
-        run: python wm_trade_gift_wb.py state1.json collecteur
+        env:
+          WM_TRADE_RECIPIENT: ${{ secrets.WM_TRADE_RECIPIENT }}
+        run: python wm_trade_gift_wb.py state1.json "$WM_TRADE_RECIPIENT"
 
-      - name: Compte 2 -> offre tout son solde a collecteur
+      - name: Compte 2 -> offre tout son solde au collecteur
         continue-on-error: true
-        run: python wm_trade_gift_wb.py state2.json collecteur
+        env:
+          WM_TRADE_RECIPIENT: ${{ secrets.WM_TRADE_RECIPIENT }}
+        run: python wm_trade_gift_wb.py state2.json "$WM_TRADE_RECIPIENT"
 
-      - name: compte 4 -> offre tout son solde a collecteur
+      - name: Compte 4 -> offre tout son solde au collecteur
         continue-on-error: true
-        run: python wm_trade_gift_wb.py state4.json collecteur
+        env:
+          WM_TRADE_RECIPIENT: ${{ secrets.WM_TRADE_RECIPIENT }}
+        run: python wm_trade_gift_wb.py state4.json "$WM_TRADE_RECIPIENT"
 
-      - name: compte 5 -> offre tout son solde a collecteur
+      - name: Compte 5 -> offre tout son solde au collecteur
         continue-on-error: true
-        run: python wm_trade_gift_wb.py state5.json collecteur
+        env:
+          WM_TRADE_RECIPIENT: ${{ secrets.WM_TRADE_RECIPIENT }}
+        run: python wm_trade_gift_wb.py state5.json "$WM_TRADE_RECIPIENT"
 
-      - name: collecteur -> accepte toutes les offres en attente
+      - name: Collecteur -> accepte toutes les offres en attente
         run: python wm_trade_accept_all.py state3.json

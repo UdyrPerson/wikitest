@@ -21,7 +21,7 @@ import wm_open_booster as booster
 # (label, port CDP dedie, fichier de session)
 ACCOUNTS = [
     ("compte test 1 (compte 1)", 9224, Path("storage_state.json")),
-    ("compte test 2 (compte 2)", 9225, Path("storage_state_test2.json")),
+    ("compte test 2 (compte 11)", 9225, Path("storage_state_test2.json")),
     ("collecteur", 9226, Path("storage_state_test3.json")),
 ]
 

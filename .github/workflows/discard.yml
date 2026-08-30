@@ -5,7 +5,7 @@ name: Defausse C/PC/R (5 comptes)
 # SR/UR/L). Separe des workflows d'ouverture de boosters le 30/08/2026
 # (etait avant une etape couplee dans auto-booster.yml / auto-booster-2.yml)
 # : tourne desormais sur son propre cron, independamment du rythme
-# d'ouverture. Etendu le meme jour a collecteur (3e compte, ouvre aussi
+# d'ouverture. Etendu le meme jour au compte collecteur (3e compte, ouvre aussi
 # des boosters via auto-booster-3.yml, mais n'a pas de workflow de trade
 # puisqu'il est le destinataire, pas l'expediteur, dans trade.yml).
 #
@@ -71,7 +71,7 @@ jobs:
       # donc un compte peut avoir une session morte au moment du run. Sans
       # ca, le premier 401 arretait le job et les comptes suivants
       # n'etaient jamais traites -- c'est ce qui est arrive le 30/08/2026,
-      # ou compte 2 a bloque la defausse de compte 4 et compte 5.
+      # ou le compte 2 a bloque la defausse des comptes 4 et 5.
       - name: Compte 1 -> defausse C/PC/R
         continue-on-error: true
         run: python wm_discard.py state1.json --rarities C,PC,R
@@ -80,14 +80,14 @@ jobs:
         continue-on-error: true
         run: python wm_discard.py state2.json --rarities C,PC,R
 
-      - name: collecteur -> defausse C/PC/R
+      - name: Compte 3 (collecteur) -> defausse C/PC/R
         continue-on-error: true
         run: python wm_discard.py state3.json --rarities C,PC,R
 
-      - name: compte 4 -> defausse C/PC/R
+      - name: Compte 4 -> defausse C/PC/R
         continue-on-error: true
         run: python wm_discard.py state4.json --rarities C,PC,R
 
-      - name: compte 5 -> defausse C/PC/R
+      - name: Compte 5 -> defausse C/PC/R
         continue-on-error: true
         run: python wm_discard.py state5.json --rarities C,PC,R

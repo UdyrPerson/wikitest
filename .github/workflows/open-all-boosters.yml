@@ -39,10 +39,10 @@ jobs:
     uses: ./.github/workflows/auto-booster-3.yml
     secrets: inherit
 
-  compte 4:
+  compte-4:
     uses: ./.github/workflows/auto-booster-4.yml
     secrets: inherit
 
-  compte 5:
+  compte-5:
     uses: ./.github/workflows/auto-booster-5.yml
     secrets: inherit

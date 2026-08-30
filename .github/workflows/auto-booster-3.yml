@@ -1,7 +1,7 @@
 name: Auto-ouverture booster WikiMasters (collecteur)
 
 # Meme logique que auto-booster.yml (voir ce fichier pour les details
-# complets), pour le 3e compte (collecteur, le compte "collecteur" qui
+# complets), pour le 3e compte (le compte collecteur, qui
 # recoit aussi les WB des deux autres via trade.yml). Fichier separe comme
 # les deux premiers comptes.
 #
@@ -42,7 +42,7 @@ jobs:
       - name: Installe Playwright (client API seulement, pas de navigateur)
         run: pip install playwright
 
-      - name: Ecrit la session de collecteur depuis le secret
+      - name: Ecrit la session du collecteur depuis le secret
         env:
           WM_TEST3_STORAGE_STATE: ${{ secrets.WM_TEST3_STORAGE_STATE }}
         run: |

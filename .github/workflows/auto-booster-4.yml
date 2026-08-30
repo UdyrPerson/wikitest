@@ -1,7 +1,7 @@
 name: Auto-ouverture booster WikiMasters (compte 4)
 
 # Meme logique que auto-booster.yml (voir ce fichier pour les details
-# complets), pour le 4e compte (compte 4). Fichier separe comme les
+# complets), pour le 4e compte. Fichier separe comme les
 # precedents.
 #
 # Cadence 50 min (voir auto-booster.yml pour le pourquoi des six lignes
@@ -41,7 +41,7 @@ jobs:
       - name: Installe Playwright (client API seulement, pas de navigateur)
         run: pip install playwright
 
-      - name: Ecrit la session de compte 4 depuis le secret
+      - name: Ecrit la session du compte 4 depuis le secret
         env:
           WM_TEST4_STORAGE_STATE: ${{ secrets.WM_TEST4_STORAGE_STATE }}
         run: |

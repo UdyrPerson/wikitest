@@ -2,8 +2,7 @@ name: Rapport cartes UR/L (5 comptes)
 
 # Workflow purement informationnel : ne fait que des GET, n'ouvre rien, ne
 # defausse rien, n'echange rien. Agrege les cartes UR et L des cinq comptes
-# et affiche le solde de wikibidous de collecteur (le compte collecteur,
-# cf trade.yml).
+# et affiche le solde de wikibidous du compte collecteur (cf trade.yml).
 #
 # Le rapport est ecrit dans le resume du run ($GITHUB_STEP_SUMMARY) : il
 # s'affiche directement sur la page de l'execution, sans avoir a ouvrir les
@@ -58,14 +57,14 @@ jobs:
           python -c "import os, pathlib; pathlib.Path('state4.json').write_text(os.environ['WM_TEST4_STORAGE_STATE'])"
           python -c "import os, pathlib; pathlib.Path('state5.json').write_text(os.environ['WM_TEST5_STORAGE_STATE'])"
 
-      - name: Agrege les cartes rares et le solde de collecteur
+      - name: Agrege les cartes rares et le solde du collecteur
         run: |
           python wm_report_rares.py \
             compte1=state1.json \
             compte2=state2.json \
             collecteur=state3.json \
-            compte 4=state4.json \
-            compte 5=state5.json \
+            compte4=state4.json \
+            compte5=state5.json \
             --rarities "${{ inputs.rarities }}" \
             --balance-of collecteur \
             | tee -a "$GITHUB_STEP_SUMMARY"
