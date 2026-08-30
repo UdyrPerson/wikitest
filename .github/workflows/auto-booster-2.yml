@@ -1,0 +1,51 @@
+name: Auto-ouverture booster WikiMasters (compte test 2)
+
+# Meme logique que auto-booster.yml (voir ce fichier pour les details
+# complets), pour un second compte de test independant. Fichier separe
+# plutot qu'un seul workflow partage : secrets GitHub Actions pas concus
+# pour un choix dynamique propre par job, panne/erreur d'un compte
+# n'affecte pas l'autre, et debogage plus simple.
+#
+# Cron decale de 5 min par rapport au premier compte (":05,:15,:25..." au
+# lieu de ":00,:10,:20...") pour repartir la charge et eviter que les deux
+# se declenchent pile au meme instant.
+
+on:
+  schedule:
+    - cron: "5-59/10 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wm-auto-booster-2
+  cancel-in-progress: false
+
+jobs:
+  open-booster:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Installe Playwright (client API seulement, pas de navigateur)
+        run: pip install playwright
+
+      - name: Ecrit la session du compte de test 2 depuis le secret
+        env:
+          WM_TEST2_STORAGE_STATE: ${{ secrets.WM_TEST2_STORAGE_STATE }}
+        run: |
+          python -c "import os, pathlib; pathlib.Path('storage_state.json').write_text(os.environ['WM_TEST2_STORAGE_STATE'])"
+
+      - name: Jitter aleatoire (0-15s) avant l'appel
+        run: python -c "import random, time; time.sleep(random.uniform(0, 15))"
+
+      - name: Ouvre un booster (mode API, sans navigateur)
+        run: python wm_open_booster.py --api
+
+      - name: Defausse les cartes C/PC/R (plafond de securite par run)
+        run: python wm_discard.py --rarities C,PC,R --max 50

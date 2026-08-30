@@ -10,6 +10,10 @@ Les identifiants ne sont JAMAIS ecrits en dur ici : ils viennent des
 variables d'environnement WM_TEST_EMAIL et WM_TEST_PASSWORD, fixees par toi
 juste avant de lancer ce script (voir lancer_wikimasters.txt, non versionne).
 
+WM_TEST_STATE_PATH (optionnelle) redirige la sauvegarde vers un autre
+fichier que storage_state.json -- utile pour gerer plusieurs comptes de
+test sans que l'un ecrase la session de l'autre.
+
 Le formulaire de connexion est protege par un widget Cloudflare Turnstile
 (verifie le 30/08/2026) : avec les memes flags anti-detection que
 wm_session.py, il se resout automatiquement ("Succes !") sans clic requis,
@@ -28,10 +32,10 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 BASE = "https://www.wiki-masters.com"
-STATE = Path("storage_state.json")
 
 
 def main():
+    STATE = Path(os.environ.get("WM_TEST_STATE_PATH", "storage_state.json"))
     email = os.environ.get("WM_TEST_EMAIL")
     password = os.environ.get("WM_TEST_PASSWORD")
     if not email or not password:

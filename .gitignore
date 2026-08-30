@@ -1,4 +1,5 @@
 storage_state.json
+storage_state*.json
 captures/
 data/
 __pycache__/
