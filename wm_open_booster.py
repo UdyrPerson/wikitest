@@ -82,7 +82,7 @@ from urllib.parse import urlparse
 
 from playwright.sync_api import sync_playwright
 
-from wm_session_io import persist
+from wm_session_io import ensure_fresh, persist
 
 
 def _detach_flags():
@@ -697,7 +697,7 @@ def main():
                 raise SystemExit("--count attend un entier, ex: --count 5")
 
         with sync_playwright() as p:
-            req_ctx = p.request.new_context(storage_state=str(STATE), base_url=BASE)
+            req_ctx = ensure_fresh(p, STATE, BASE)
             # try/finally : open_via_api leve SystemExit sur 401/403, et le
             # serveur a pu faire tourner le refresh token AVANT cette
             # erreur. Sans sauvegarde, la copie stockee devient perimee et

@@ -28,7 +28,7 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-from wm_session_io import persist
+from wm_session_io import ensure_fresh, persist
 
 BASE = "https://www.wiki-masters.com"
 
@@ -114,7 +114,7 @@ def main():
                 skipped.append((label, f"{path} introuvable"))
                 continue
 
-            req_ctx = p.request.new_context(storage_state=str(path), base_url=BASE)
+            req_ctx = ensure_fresh(p, path, BASE)
             try:
                 for rarity in rarities:
                     for row in fetch_rarity(req_ctx, rarity):

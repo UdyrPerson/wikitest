@@ -44,7 +44,7 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-from wm_session_io import persist
+from wm_session_io import ensure_fresh, persist
 
 BASE = "https://www.wiki-masters.com"
 
@@ -137,7 +137,10 @@ def main():
     remaining_budget = [max_total if max_total is not None else float("inf")]
 
     with sync_playwright() as p:
-        req_ctx = p.request.new_context(storage_state=str(state_path), base_url=BASE)
+        # Force la rotation du jeton avant la boucle : sans ca, une
+        # expiration en cours de defausse revoque la session (cf
+        # wm_session_io.ensure_fresh).
+        req_ctx = ensure_fresh(p, state_path, BASE)
 
         total = 0
         # try/finally : discard_rarity leve SystemExit sur 401/403, et le

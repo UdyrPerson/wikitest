@@ -25,7 +25,7 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-from wm_session_io import persist
+from wm_session_io import ensure_fresh, persist
 
 BASE = "https://www.wiki-masters.com"
 DELAY = 2.0  # entre deux acceptations, cf CLAUDE.md
@@ -63,7 +63,7 @@ def main():
         raise SystemExit(f"{state_path} introuvable — lance d'abord wm_session.py ou wm_session_auto.py.")
 
     with sync_playwright() as p:
-        req = p.request.new_context(storage_state=str(state_path), base_url=BASE)
+        req = ensure_fresh(p, state_path, BASE)
         try:
             accept_pending(req)
         finally:
