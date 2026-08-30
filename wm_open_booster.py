@@ -126,8 +126,12 @@ CDP_PORT = 9224
 
 # Delai entre deux ouvertures en mode --api. Ne descends pas sous 2s, meme
 # ici (cf CLAUDE.md) : c'est justement le mode qui ressemble le plus a un
-# bot, donc celui ou ce garde-fou compte le plus.
-API_DELAY = (2.0, 4.0)
+# bot, donc celui ou ce garde-fou compte le plus. 5-10s decide le
+# 30/08/2026 pour l'usage "ouvre tout ce qui est disponible d'un coup"
+# (workflow GitHub Actions toutes les 90 min), plus prudent que l'ancien
+# 2-4s vu que ce mode enchaine potentiellement jusqu'a 10 ouvertures
+# d'affilee dans le meme run.
+API_DELAY = (5.0, 10.0)
 
 # Chemin standard de Chrome sur Windows (meme hypothese que le docstring de
 # wm_session_cdp.py). Si ton install est ailleurs, ajuste cette constante.

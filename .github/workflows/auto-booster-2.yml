@@ -6,13 +6,19 @@ name: Auto-ouverture booster WikiMasters (compte test 2)
 # pour un choix dynamique propre par job, panne/erreur d'un compte
 # n'affecte pas l'autre, et debogage plus simple.
 #
-# Cron decale de 5 min par rapport au premier compte (":05,:15,:25..." au
-# lieu de ":00,:10,:20...") pour repartir la charge et eviter que les deux
-# se declenchent pile au meme instant.
+# Change le 30/08/2026 comme auto-booster.yml : ouvre tous les boosters
+# disponibles d'un coup (--count 10, s'arrete tout seul a packs_remaining=0)
+# avec 5-10s entre chaque ouverture, cron ~90 min au lieu de 10 min.
+#
+# Decale de 45 min par rapport au premier compte (moitie de 90 min) pour
+# que les deux ne se declenchent jamais au meme instant : 0:45, 2:15,
+# 3:45, 5:15... en alternant minute 45 (memes heures que le cron 1) et
+# minute 15 (heures intermediaires).
 
 on:
   schedule:
-    - cron: "5-59/10 * * * *"
+    - cron: "45 0,3,6,9,12,15,18,21 * * *"
+    - cron: "15 2,5,8,11,14,17,20,23 * * *"
   workflow_dispatch: {}
 
 permissions:
@@ -44,8 +50,8 @@ jobs:
       - name: Jitter aleatoire (0-15s) avant l'appel
         run: python -c "import random, time; time.sleep(random.uniform(0, 15))"
 
-      - name: Ouvre un booster (mode API, sans navigateur)
-        run: python wm_open_booster.py --api
+      - name: Ouvre tous les boosters disponibles (mode API, sans navigateur)
+        run: python wm_open_booster.py --api --count 10
 
       - name: Defausse les cartes C/PC/R (plafond de securite par run)
         run: python wm_discard.py --rarities C,PC,R --max 50

@@ -16,15 +16,25 @@ name: Auto-ouverture booster WikiMasters (compte test)
 # vers une autre rarete par accident.
 #
 # Cron GitHub Actions : pas garanti a la minute pres (peut etre retarde en
-# periode de charge), et l'intervalle mini documente est 5 minutes. 10 min
-# ici, aligne sur le rythme de wm_auto_booster.py en local. Un jitter
-# aleatoire (0-15s) est ajoute avant l'appel pour eviter un motif
+# periode de charge), et l'intervalle mini documente est 5 minutes. Un
+# jitter aleatoire (0-15s) est ajoute avant l'appel pour eviter un motif
 # parfaitement regulier -- un cron pile a l'heure est justement le signal
 # le plus facile a reperer pour un anti-bot.
+#
+# Change le 30/08/2026 : au lieu d'ouvrir 1 booster toutes les 10 min, ce
+# workflow ouvre maintenant TOUS les boosters disponibles d'un coup
+# (wm_open_booster.py --api --count 10 -- s'arrete de lui-meme des que
+# packs_remaining tombe a 0, cf open_via_api()), avec 5-10s entre chaque
+# ouverture (API_DELAY dans wm_open_booster.py). Cron passe a ~90 min en
+# consequence : les paquets se regenerent lentement, pas besoin de
+# verifier toutes les 10 min. 90 min n'etant pas un diviseur de 60, il
+# faut deux lignes cron pour l'exprimer exactement (alternance :00/:30
+# toutes les 1h30 en UTC) plutot qu'un seul "*/90" invalide en minutes.
 
 on:
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "0 0,3,6,9,12,15,18,21 * * *"
+    - cron: "30 1,4,7,10,13,16,19,22 * * *"
   workflow_dispatch: {}  # bouton "Run workflow" manuel, utile pour tester
 
 permissions:
@@ -56,8 +66,8 @@ jobs:
       - name: Jitter aleatoire (0-15s) avant l'appel
         run: python -c "import random, time; time.sleep(random.uniform(0, 15))"
 
-      - name: Ouvre un booster (mode API, sans navigateur)
-        run: python wm_open_booster.py --api
+      - name: Ouvre tous les boosters disponibles (mode API, sans navigateur)
+        run: python wm_open_booster.py --api --count 10
 
       - name: Defausse les cartes C/PC/R (plafond de securite par run)
         run: python wm_discard.py --rarities C,PC,R --max 50
