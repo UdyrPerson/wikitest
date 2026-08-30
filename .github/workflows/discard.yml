@@ -60,17 +60,28 @@ jobs:
       - name: Jitter aleatoire (0-15s)
         run: python -c "import random, time; time.sleep(random.uniform(0, 15))"
 
+      # continue-on-error sur chaque compte : la session Supabase expire au
+      # bout d'une heure pile (expires_in: 3600, constate le 30/08/2026),
+      # donc un compte peut avoir une session morte au moment du run. Sans
+      # ca, le premier 401 arretait le job et les comptes suivants
+      # n'etaient jamais traites -- c'est ce qui est arrive le 30/08/2026,
+      # ou compte 2 a bloque la defausse de compte 4 et compte 5.
       - name: Compte 1 -> defausse C/PC/R
+        continue-on-error: true
         run: python wm_discard.py state1.json --rarities C,PC,R
 
       - name: Compte 2 -> defausse C/PC/R
+        continue-on-error: true
         run: python wm_discard.py state2.json --rarities C,PC,R
 
       - name: collecteur -> defausse C/PC/R
+        continue-on-error: true
         run: python wm_discard.py state3.json --rarities C,PC,R
 
       - name: compte 4 -> defausse C/PC/R
+        continue-on-error: true
         run: python wm_discard.py state4.json --rarities C,PC,R
 
       - name: compte 5 -> defausse C/PC/R
+        continue-on-error: true
         run: python wm_discard.py state5.json --rarities C,PC,R

@@ -57,16 +57,25 @@ jobs:
       - name: Jitter aleatoire (0-15s)
         run: python -c "import random, time; time.sleep(random.uniform(0, 15))"
 
+      # continue-on-error sur chaque emetteur : la session Supabase expire
+      # au bout d'une heure pile (expires_in: 3600), donc un emetteur peut
+      # avoir une session morte au moment du run. Sans ca, son 401 arretait
+      # le job et empechait les autres d'envoyer -- et surtout empechait
+      # l'etape d'acceptation ci-dessous de s'executer.
       - name: Compte 1 -> offre tout son solde a collecteur
+        continue-on-error: true
         run: python wm_trade_gift_wb.py state1.json collecteur
 
       - name: Compte 2 -> offre tout son solde a collecteur
+        continue-on-error: true
         run: python wm_trade_gift_wb.py state2.json collecteur
 
       - name: compte 4 -> offre tout son solde a collecteur
+        continue-on-error: true
         run: python wm_trade_gift_wb.py state4.json collecteur
 
       - name: compte 5 -> offre tout son solde a collecteur
+        continue-on-error: true
         run: python wm_trade_gift_wb.py state5.json collecteur
 
       - name: collecteur -> accepte toutes les offres en attente
