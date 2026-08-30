@@ -296,41 +296,106 @@ def capture_network(ctx, page):
     return log, lambda: ctx.remove_listener("response", on_response)
 
 
+def _find_cf_frame(page):
+    for f in page.frames:
+        if "challenges.cloudflare.com" in f.url:
+            return f
+    return None
+
+
 def handle_cloudflare_challenge(page, wait_after_ms: int = 2500) -> bool:
     """Detecte un challenge Cloudflare Turnstile (le meme mecanisme que sur
-    /login, verifie le 30/08/2026 dans wm_session_auto.py) et tente de le
-    resoudre. D'apres l'usage, il peut apparaitre de temps en temps sur
-    /pulls aussi, pas seulement a la connexion ("une fenetre en haut pour
-    verifier qu'on est humain"). Souvent resolu tout seul en quelques
+    /login, verifie le 30/08/2026 dans wm_session_auto.py ; sur /pulls il
+    se presente juste comme une case a cocher, pas la pleine page dediee du
+    login) et tente de le resoudre. Souvent resolu tout seul en quelques
     secondes avec les flags anti-detection deja utilises pour lancer
     Chrome (observe empiriquement : "Succes !" sans clic) ; on tente un
     clic explicite sur la case a cocher en repli si elle est visible.
+
+    Log prefixe "[CLOUDFLARE]" pour reperer facilement ces evenements dans
+    les logs (utile pour un suivi en tail -f / Get-Content -Wait). Si le
+    challenge est toujours present apres la tentative de resolution, une
+    capture d'ecran horodatee est sauvegardee dans captures/screenshots/
+    pour revue a posteriori, meme si personne ne regardait la fenetre au
+    moment ou ca s'est produit.
+
     Retourne True si un challenge a ete detecte (resolu ou non) -- appelant
     peut alors reessayer l'action qui a echoue."""
-    cf_frame = None
-    for f in page.frames:
-        if "challenges.cloudflare.com" in f.url:
-            cf_frame = f
-            break
+    cf_frame = _find_cf_frame(page)
     if cf_frame is None:
         return False
 
-    print("  Challenge Cloudflare detecte (verification humaine) — tentative de resolution...")
+    print("  [CLOUDFLARE] challenge detecte (verification humaine) — tentative de resolution...")
     page.wait_for_timeout(wait_after_ms)
     try:
         checkbox = cf_frame.locator("input[type='checkbox']")
         if checkbox.count() > 0 and checkbox.first.is_visible():
             checkbox.first.click(timeout=3000)
-            print("  Clic sur la case a cocher du challenge.")
+            print("  [CLOUDFLARE] clic sur la case a cocher.")
             page.wait_for_timeout(wait_after_ms)
     except Exception as e:
-        print(f"  Pas de case a cliquer ou deja resolu ({e.__class__.__name__}).")
+        print(f"  [CLOUDFLARE] pas de case a cliquer ou deja resolu ({e.__class__.__name__}).")
+
+    if _find_cf_frame(page) is not None:
+        SCREENSHOTS.mkdir(parents=True, exist_ok=True)
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        shot = SCREENSHOTS / f"cloudflare-unresolved-{stamp}.png"
+        try:
+            page.screenshot(path=str(shot))
+        except Exception:
+            shot = None
+        print(f"  [CLOUDFLARE] TOUJOURS PRESENT apres tentative de resolution."
+              + (f" Capture : {shot.resolve()}" if shot else ""))
+    else:
+        print("  [CLOUDFLARE] resolu.")
+
     return True
+
+
+# Ecran propre a WikiMasters (pas Cloudflare) vu le 30/08/2026 sur /pulls :
+# "Verification rapide -- Pour continuer a ouvrir des paquets, confirme
+# que tu utilises l'application manuellement (pas de script ni bot)",
+# avec une case "Je ne suis pas un robot". Delibegrement PAS automatise :
+# cocher cette case avec un script attesterait faussement l'inverse de ce
+# qu'elle verifie. Cf discussion du 30/08/2026 -- probablement declenche
+# par l'usage soutenu du mode --api (le plus "bot-like") via le cron
+# GitHub Actions pendant plusieurs heures d'affilee.
+MANUAL_VERIFICATION_TEXT = "Je ne suis pas un robot"
+
+
+def detect_manual_verification_gate(page) -> bool:
+    """Detecte cet ecran. Ne clique jamais dessus. Retourne True s'il est
+    present, pour que l'appelant s'arrete proprement (cf run_ouverture qui
+    leve SystemExit dans ce cas, capte par la boucle de wm_auto_booster.py
+    exactement comme une session expiree) plutot que de rester bloque en
+    boucle silencieuse ou de mentir a ce controle."""
+    try:
+        gate = page.get_by_text(MANUAL_VERIFICATION_TEXT, exact=False)
+        return gate.count() > 0 and gate.first.is_visible()
+    except Exception:
+        return False
+
+
+def _screenshot_verification_gate(page, tag: str) -> Path:
+    SCREENSHOTS.mkdir(parents=True, exist_ok=True)
+    shot = SCREENSHOTS / f"verification-gate-{tag}-{time.strftime('%Y%m%d-%H%M%S')}.png"
+    try:
+        page.screenshot(path=str(shot))
+    except Exception:
+        pass
+    return shot
 
 
 def recon(page, stamp):
     """Repere les candidats a l'ouverture, prend une capture d'ecran, les
     affiche. Ne clique jamais rien. Retourne la liste des candidats."""
+    if detect_manual_verification_gate(page):
+        shot = _screenshot_verification_gate(page, "recon")
+        raise SystemExit(
+            "Ecran 'Verification rapide / Je ne suis pas un robot' detecte sur /pulls. "
+            "Confirmation manuelle necessaire (non automatisee volontairement) — "
+            f"va cocher la case toi-meme dans la fenetre Chrome. Capture : {shot.resolve()}"
+        )
     handle_cloudflare_challenge(page)
     SCREENSHOTS.mkdir(parents=True, exist_ok=True)
     shot = SCREENSHOTS / f"before-{stamp}.png"
@@ -382,6 +447,16 @@ def open_and_reveal(ctx, page, candidates, stamp) -> bool:
         except Exception:
             pass
 
+    if detect_manual_verification_gate(page):
+        shot = _screenshot_verification_gate(page, "after-click")
+        stop_logging()
+        log.close()
+        raise SystemExit(
+            "Ecran 'Verification rapide / Je ne suis pas un robot' detecte apres le clic. "
+            "Confirmation manuelle necessaire (non automatisee volontairement) — "
+            f"va cocher la case toi-meme dans la fenetre Chrome. Capture : {shot.resolve()}"
+        )
+
     print(f"Clique. Attente {REVEAL_WAIT}s pour l'animation d'ouverture...")
     time.sleep(REVEAL_WAIT)
 
@@ -391,6 +466,15 @@ def open_and_reveal(ctx, page, candidates, stamp) -> bool:
 
     continued = False
     for i in range(1, MAX_NEXT_CLICKS + 1):
+        if detect_manual_verification_gate(page):
+            shot = _screenshot_verification_gate(page, f"loop-{i}")
+            stop_logging()
+            log.close()
+            raise SystemExit(
+                "Ecran 'Verification rapide / Je ne suis pas un robot' detecte pendant le "
+                "defilement. Confirmation manuelle necessaire (non automatisee volontairement) — "
+                f"va cocher la case toi-meme dans la fenetre Chrome. Capture : {shot.resolve()}"
+            )
         handle_cloudflare_challenge(page)
         try:
             continue_btn = page.get_by_role("button", name=CONTINUE_PATTERN).first

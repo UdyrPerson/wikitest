@@ -7,15 +7,15 @@ name: Auto-ouverture booster WikiMasters (compte test)
 # secret du repo, jamais commite).
 #
 # Cron GitHub Actions : pas garanti a la minute pres (peut etre retarde en
-# periode de charge), et l'intervalle mini documente est 5 minutes. 15 min
-# ici pour rester large. Un jitter aleatoire (0-15s) est ajoute avant
-# l'appel pour eviter un motif parfaitement regulier (meme logique que
-# wm_auto_booster.py en local -- un cron pile a l'heure est justement le
-# signal le plus facile a reperer pour un anti-bot).
+# periode de charge), et l'intervalle mini documente est 5 minutes. 10 min
+# ici, aligne sur le rythme de wm_auto_booster.py en local. Un jitter
+# aleatoire (0-15s) est ajoute avant l'appel pour eviter un motif
+# parfaitement regulier -- un cron pile a l'heure est justement le signal
+# le plus facile a reperer pour un anti-bot.
 
 on:
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "*/10 * * * *"
   workflow_dispatch: {}  # bouton "Run workflow" manuel, utile pour tester
 
 permissions:
