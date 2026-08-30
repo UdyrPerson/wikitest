@@ -4,15 +4,20 @@ name: Auto-ouverture booster WikiMasters (compte 4)
 # complets), pour le 4e compte (compte 4). Fichier separe comme les
 # precedents.
 #
-# Decale de 15 min par rapport au premier compte pour que les cinq comptes
-# ne se declenchent jamais au meme instant (0/45/60/15/75 min sur le cycle
-# de 90 min) : 0:15, 1:45, 3:15, 4:45... en alternant minute 15 (heures
-# 0,3,6...) et minute 45 (heures 1,4,7...).
+# Cadence 50 min (voir auto-booster.yml pour le pourquoi des six lignes
+# cron et le lien avec l'expiration des jetons Supabase), decale de
+# +30 min par rapport au compte 1 : les cinq comptes se repartissent sur
+# le cycle par pas de 10 min (0/10/20/30/40) pour qu'ils ne tapent jamais
+# l'API au meme instant.
 
 on:
   schedule:
-    - cron: "15 0,3,6,9,12,15,18,21 * * *"
-    - cron: "45 1,4,7,10,13,16,19,22 * * *"
+    - cron: "0 3,8,13,18,23 * * *"
+    - cron: "10 2,7,12,17,22 * * *"
+    - cron: "20 1,6,11,16,21 * * *"
+    - cron: "30 0,5,10,15,20 * * *"
+    - cron: "40 4,9,14,19 * * *"
+    - cron: "50 3,8,13,18,23 * * *"
   workflow_dispatch: {}
   workflow_call: {}  # appelable depuis open-all-boosters.yml (secrets: inherit)
 

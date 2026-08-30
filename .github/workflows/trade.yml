@@ -11,13 +11,21 @@ name: Trade WB vers collecteur
 # clairement si l'amitie n'existe pas encore. Amities verifiees
 # "accepted" pour les quatre emetteurs le 30/08/2026.
 #
-# Cron horaire (a :30, decale des cycles de 10 min des deux workflows
-# d'ouverture de boosters) : le solde s'accumule lentement (quelques wb par
-# cycle de defausse), pas besoin de la meme cadence.
+# Cadence 50 min (etait horaire), alignee sur les autres workflows : un
+# cycle plus court que l'heure evite de tomber systematiquement apres
+# l'expiration des jetons Supabase, qui durent exactement 1h. Voir
+# auto-booster.yml pour le pourquoi des six lignes cron. Decale de
+# +25 min par rapport au compte 1 pour ne croiser ni les creneaux
+# d'ouverture (0/10/20/30/40) ni celui de la defausse (+5).
 
 on:
   schedule:
-    - cron: "30 * * * *"
+    - cron: "5 2,7,12,17,22 * * *"
+    - cron: "15 1,6,11,16,21 * * *"
+    - cron: "25 0,5,10,15,20 * * *"
+    - cron: "35 4,9,14,19 * * *"
+    - cron: "45 3,8,13,18,23 * * *"
+    - cron: "55 2,7,12,17,22 * * *"
   workflow_dispatch: {}
 
 permissions:

@@ -8,17 +8,22 @@ name: Auto-ouverture booster WikiMasters (compte test 2)
 #
 # Change le 30/08/2026 comme auto-booster.yml : ouvre tous les boosters
 # disponibles d'un coup (--count 10, s'arrete tout seul a packs_remaining=0)
-# avec 5-10s entre chaque ouverture, cron ~90 min au lieu de 10 min.
+# avec 5-10s entre chaque ouverture, cadence 50 min (voir auto-booster.yml
+# pour le pourquoi des six lignes cron et le lien avec l'expiration des
+# jetons Supabase).
 #
-# Decale de 45 min par rapport au premier compte (moitie de 90 min) pour
-# que les deux ne se declenchent jamais au meme instant : 0:45, 2:15,
-# 3:45, 5:15... en alternant minute 45 (memes heures que le cron 1) et
-# minute 15 (heures intermediaires).
+# Decale de +10 min par rapport au compte 1 : les cinq comptes se
+# repartissent sur le cycle de 50 min par pas de 10 min (0/10/20/30/40)
+# pour qu'ils ne tapent jamais l'API au meme instant.
 
 on:
   schedule:
-    - cron: "45 0,3,6,9,12,15,18,21 * * *"
-    - cron: "15 2,5,8,11,14,17,20,23 * * *"
+    - cron: "0 1,6,11,16,21 * * *"
+    - cron: "10 0,5,10,15,20 * * *"
+    - cron: "20 4,9,14,19 * * *"
+    - cron: "30 3,8,13,18,23 * * *"
+    - cron: "40 2,7,12,17,22 * * *"
+    - cron: "50 1,6,11,16,21 * * *"
   workflow_dispatch: {}
   workflow_call: {}  # appelable depuis open-all-boosters.yml (secrets: inherit)
 

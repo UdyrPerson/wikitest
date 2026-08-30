@@ -20,16 +20,29 @@ name: Auto-ouverture booster WikiMasters (compte test)
 # workflow ouvre maintenant TOUS les boosters disponibles d'un coup
 # (wm_open_booster.py --api --count 10 -- s'arrete de lui-meme des que
 # packs_remaining tombe a 0, cf open_via_api()), avec 5-10s entre chaque
-# ouverture (API_DELAY dans wm_open_booster.py). Cron passe a ~90 min en
-# consequence : les paquets se regenerent lentement, pas besoin de
-# verifier toutes les 10 min. 90 min n'etant pas un diviseur de 60, il
-# faut deux lignes cron pour l'exprimer exactement (alternance :00/:30
-# toutes les 1h30 en UTC) plutot qu'un seul "*/90" invalide en minutes.
+# ouverture (API_DELAY dans wm_open_booster.py).
+#
+# Cadence de 50 min (etait 90 min) : les jetons Supabase du site durent
+# exactement 1h (expires_in: 3600), donc un cycle plus court que l'heure
+# garantit qu'au moins un run tombe dans la fenetre de validite apres
+# chaque reconnexion. Attention, ca n'allonge PAS la duree de vie du
+# jeton : celui stocke dans le secret reste fige et meurt 1h apres la
+# connexion locale (verifie le 30/08/2026 -- ni une requete de page ni un
+# appel API ne fait tourner les cookies).
+#
+# 50 min n'etant pas un diviseur de 60, le motif ne se referme qu'au bout
+# de 5h (PPCM de 50 et 60 = 300 min), d'ou six lignes cron : c'est la
+# seule facon d'exprimer un intervalle exact de 50 min en cron, "*/50"
+# etant invalide sur le champ des minutes.
 
 on:
   schedule:
-    - cron: "0 0,3,6,9,12,15,18,21 * * *"
-    - cron: "30 1,4,7,10,13,16,19,22 * * *"
+    - cron: "0 0,5,10,15,20 * * *"
+    - cron: "10 4,9,14,19 * * *"
+    - cron: "20 3,8,13,18,23 * * *"
+    - cron: "30 2,7,12,17,22 * * *"
+    - cron: "40 1,6,11,16,21 * * *"
+    - cron: "50 0,5,10,15,20 * * *"
   workflow_dispatch: {}  # bouton "Run workflow" manuel, utile pour tester
   workflow_call: {}  # appelable depuis open-all-boosters.yml (secrets: inherit)
 

@@ -11,16 +11,22 @@ name: Defausse C/PC/R (5 comptes)
 #
 # Pure API (comme les autres workflows du projet), pas de navigateur.
 #
-# Cron ~90 min comme les workflows de boosters, decale de 20 min par
-# rapport a auto-booster.yml pour laisser le temps a un cycle d'ouverture
-# de s'executer avant de nettoyer -- mais ce n'est pas une dependance
-# stricte, ce workflow defausse simplement ce qui est present au moment
-# ou il tourne, quelle qu'en soit l'origine.
+# Cadence 50 min comme les workflows de boosters (voir auto-booster.yml
+# pour le pourquoi des six lignes cron et le lien avec l'expiration des
+# jetons Supabase), decale de +5 min par rapport au compte 1 pour tomber
+# entre deux creneaux d'ouverture (les comptes occupent 0/10/20/30/40) --
+# mais ce n'est pas une dependance stricte, ce workflow defausse
+# simplement ce qui est present au moment ou il tourne, quelle qu'en soit
+# l'origine.
 
 on:
   schedule:
-    - cron: "20 0,3,6,9,12,15,18,21 * * *"
-    - cron: "50 1,4,7,10,13,16,19,22 * * *"
+    - cron: "5 0,5,10,15,20 * * *"
+    - cron: "15 4,9,14,19 * * *"
+    - cron: "25 3,8,13,18,23 * * *"
+    - cron: "35 2,7,12,17,22 * * *"
+    - cron: "45 1,6,11,16,21 * * *"
+    - cron: "55 0,5,10,15,20 * * *"
   workflow_dispatch: {}
 
 permissions:
