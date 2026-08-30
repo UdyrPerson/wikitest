@@ -56,8 +56,12 @@ def discard_rarity(req_ctx, rarity: str, remaining_budget) -> int:
     discarded = 0
     while remaining_budget[0] > 0:
         resp = req_ctx.get(f"/api/my-collection?sort=rarity&rarity={rarity}&page=0&stats=0")
-        if resp.status in (401, 403):
-            raise SystemExit(f"{resp.status} sur my-collection — session expiree. Relance wm_session.py.")
+        if resp.status == 401:
+            raise SystemExit("401 sur my-collection — session expiree. Relance wm_session_auto.py.")
+        if resp.status == 403:
+            # 403 n'est pas forcement une session morte (cf /api/packs/open,
+            # ou il signale "plus de paquets") : on montre le corps.
+            raise SystemExit(f"403 sur my-collection : {resp.text()[:300]}")
         if resp.status == 429:
             print("    429 : on ralentit franchement (60s)")
             time.sleep(60)
@@ -76,8 +80,10 @@ def discard_rarity(req_ctx, rarity: str, remaining_budget) -> int:
         title = row.get("card", {}).get("wikipedia_title", "?")
 
         d_resp = req_ctx.post(f"/api/user-cards/{user_card_id}/discard")
-        if d_resp.status in (401, 403):
-            raise SystemExit(f"{d_resp.status} sur discard — session expiree. Relance wm_session.py.")
+        if d_resp.status == 401:
+            raise SystemExit("401 sur discard — session expiree. Relance wm_session_auto.py.")
+        if d_resp.status == 403:
+            raise SystemExit(f"403 sur discard : {d_resp.text()[:300]}")
         if d_resp.status == 429:
             print("    429 sur discard : on ralentit franchement (60s)")
             time.sleep(60)

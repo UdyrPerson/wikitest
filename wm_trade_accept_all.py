@@ -33,8 +33,10 @@ DELAY = 2.0  # entre deux acceptations, cf CLAUDE.md
 
 def accept_pending(req):
     trades_resp = req.get("/api/trades")
-    if trades_resp.status in (401, 403):
-        raise SystemExit(f"{trades_resp.status} sur /api/trades — session expiree.")
+    if trades_resp.status == 401:
+        raise SystemExit("401 sur /api/trades — session expiree.")
+    if trades_resp.status == 403:
+        raise SystemExit(f"403 sur /api/trades : {trades_resp.text()[:300]}")
     trades = trades_resp.json().get("trades", [])
     pending = [t for t in trades if t.get("status") == "pending"]
 

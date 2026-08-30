@@ -46,8 +46,10 @@ def fetch_rarity(req_ctx, rarity: str):
     page = 0
     while True:
         resp = req_ctx.get(f"/api/my-collection?sort=rarity&rarity={rarity}&page={page}&stats=0")
-        if resp.status in (401, 403):
-            raise SystemExit(f"{resp.status} sur my-collection — session expiree.")
+        if resp.status == 401:
+            raise SystemExit("401 sur my-collection — session expiree.")
+        if resp.status == 403:
+            raise SystemExit(f"403 sur my-collection : {resp.text()[:300]}")
         if resp.status == 429:
             print(f"    429 sur {rarity} — pause 60s", file=sys.stderr)
             time.sleep(60)

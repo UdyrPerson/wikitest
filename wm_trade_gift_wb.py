@@ -54,8 +54,10 @@ def main():
 
 def gift(req, target_username):
     friends_resp = req.get("/api/friends")
-    if friends_resp.status in (401, 403):
-        raise SystemExit(f"{friends_resp.status} sur /api/friends — session expiree.")
+    if friends_resp.status == 401:
+        raise SystemExit("401 sur /api/friends — session expiree.")
+    if friends_resp.status == 403:
+        raise SystemExit(f"403 sur /api/friends : {friends_resp.text()[:300]}")
     friendships = friends_resp.json().get("friendships", [])
 
     recipient_id = None

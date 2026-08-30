@@ -516,16 +516,39 @@ def open_and_reveal(ctx, page, candidates, stamp) -> bool:
 
 def open_via_api(req_ctx, count: int):
     """Ouvre 'count' paquets par appel direct a l'API, sans navigateur.
-    S'arrete plus tot sur session expiree, erreur, ou plus de paquets
-    disponibles (packs_remaining renvoye par l'API elle-meme)."""
+    S'arrete plus tot sur session expiree (401), erreur, ou plus de paquets
+    disponibles -- ce dernier cas etant signale de DEUX facons par l'API :
+    packs_remaining <= 0 dans une reponse 200, ou un 403 avec
+    {"error":"Plus de paquets disponibles"} si le compteur etait deja a
+    zero. Les deux sont des fins normales, pas des erreurs."""
     results = []
     for i in range(1, count + 1):
         resp = req_ctx.post("/api/packs/open")
 
-        if resp.status in (401, 403):
+        if resp.status == 401:
             raise SystemExit(
-                f"{resp.status} sur /api/packs/open — session expiree. Relance wm_session.py."
+                "401 sur /api/packs/open — session expiree. Relance wm_session_auto.py."
             )
+        # 403 ne veut PAS dire "session expiree" : c'est la reponse normale
+        # quand le compteur de paquets est a zero
+        # ({"error":"Plus de paquets disponibles","packs_remaining":0,
+        #   "next_regen_at":"..."}). Confondre les deux (ce que faisait ce
+        # code jusqu'au 30/08/2026) faisait echouer bruyamment un workflow
+        # qui n'avait simplement rien a ouvrir, et envoyait chercher un
+        # probleme de session inexistant -- d'ou des echecs qui semblaient
+        # tourner d'un compte a l'autre, les paquets se regenerant a des
+        # heures differentes selon les comptes.
+        if resp.status == 403:
+            try:
+                payload = resp.json()
+            except Exception:
+                payload = {}
+            if payload.get("packs_remaining") == 0 or "paquet" in str(payload.get("error", "")).lower():
+                regen = payload.get("next_regen_at")
+                suffix = f" — prochaine regeneration : {regen}" if regen else ""
+                print(f"    plus de paquets disponibles{suffix}")
+                break
+            raise SystemExit(f"403 sur /api/packs/open : {resp.text()[:300]}")
         if resp.status == 429:
             print("    429 : on ralentit franchement (60s)")
             time.sleep(60)
