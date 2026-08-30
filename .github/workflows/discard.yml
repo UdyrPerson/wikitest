@@ -1,11 +1,13 @@
-name: Defausse C/PC/R (comptes test)
+name: Defausse C/PC/R (3 comptes)
 
-# Defausse les cartes Communes/Peu Communes/Rares accumulees sur les deux
-# comptes de test (wm_discard.py, filtre strict --rarities C,PC,R --
-# jamais SR/UR/L). Separe des workflows d'ouverture de boosters le
-# 30/08/2026 (etait avant une etape couplee dans auto-booster.yml /
-# auto-booster-2.yml) : tourne desormais sur son propre cron,
-# independamment du rythme d'ouverture.
+# Defausse les cartes Communes/Peu Communes/Rares accumulees sur les trois
+# comptes (wm_discard.py, filtre strict --rarities C,PC,R -- jamais
+# SR/UR/L). Separe des workflows d'ouverture de boosters le 30/08/2026
+# (etait avant une etape couplee dans auto-booster.yml / auto-booster-2.yml)
+# : tourne desormais sur son propre cron, independamment du rythme
+# d'ouverture. Etendu le meme jour a collecteur (3e compte, ouvre aussi
+# des boosters via auto-booster-3.yml, mais n'a pas de workflow de trade
+# puisqu'il est le destinataire, pas l'expediteur, dans trade.yml).
 #
 # Pure API (comme les autres workflows du projet), pas de navigateur.
 #
@@ -41,13 +43,15 @@ jobs:
       - name: Installe Playwright (client API seulement, pas de navigateur)
         run: pip install playwright
 
-      - name: Ecrit les sessions des deux comptes de test depuis les secrets
+      - name: Ecrit les sessions des trois comptes depuis les secrets
         env:
           WM_TEST_STORAGE_STATE: ${{ secrets.WM_TEST_STORAGE_STATE }}
           WM_TEST2_STORAGE_STATE: ${{ secrets.WM_TEST2_STORAGE_STATE }}
+          WM_TEST3_STORAGE_STATE: ${{ secrets.WM_TEST3_STORAGE_STATE }}
         run: |
           python -c "import os, pathlib; pathlib.Path('state1.json').write_text(os.environ['WM_TEST_STORAGE_STATE'])"
           python -c "import os, pathlib; pathlib.Path('state2.json').write_text(os.environ['WM_TEST2_STORAGE_STATE'])"
+          python -c "import os, pathlib; pathlib.Path('state3.json').write_text(os.environ['WM_TEST3_STORAGE_STATE'])"
 
       - name: Jitter aleatoire (0-15s)
         run: python -c "import random, time; time.sleep(random.uniform(0, 15))"
@@ -57,3 +61,6 @@ jobs:
 
       - name: Compte 2 -> defausse C/PC/R
         run: python wm_discard.py state2.json --rarities C,PC,R --max 50
+
+      - name: collecteur -> defausse C/PC/R
+        run: python wm_discard.py state3.json --rarities C,PC,R --max 50

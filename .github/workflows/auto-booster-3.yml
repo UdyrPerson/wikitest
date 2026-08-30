@@ -1,0 +1,49 @@
+name: Auto-ouverture booster WikiMasters (collecteur)
+
+# Meme logique que auto-booster.yml (voir ce fichier pour les details
+# complets), pour le 3e compte (collecteur, le compte "collecteur" qui
+# recoit aussi les WB des deux autres via trade.yml). Fichier separe comme
+# les deux premiers comptes.
+#
+# Decale de 60 min par rapport au premier compte et distinct du second
+# (+45 min) pour que les trois ne se declenchent jamais au meme instant :
+# 1:00, 2:30, 4:00, 5:30... en alternant minute 0 (heures 1,4,7...) et
+# minute 30 (heures 2,5,8...).
+
+on:
+  schedule:
+    - cron: "0 1,4,7,10,13,16,19,22 * * *"
+    - cron: "30 2,5,8,11,14,17,20,23 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wm-auto-booster-3
+  cancel-in-progress: false
+
+jobs:
+  open-booster:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Installe Playwright (client API seulement, pas de navigateur)
+        run: pip install playwright
+
+      - name: Ecrit la session de collecteur depuis le secret
+        env:
+          WM_TEST3_STORAGE_STATE: ${{ secrets.WM_TEST3_STORAGE_STATE }}
+        run: |
+          python -c "import os, pathlib; pathlib.Path('storage_state.json').write_text(os.environ['WM_TEST3_STORAGE_STATE'])"
+
+      - name: Jitter aleatoire (0-15s) avant l'appel
+        run: python -c "import random, time; time.sleep(random.uniform(0, 15))"
+
+      - name: Ouvre tous les boosters disponibles (mode API, sans navigateur)
+        run: python wm_open_booster.py --api --count 10
