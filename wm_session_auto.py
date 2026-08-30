@@ -27,11 +27,22 @@ wm_session.py : la fenetre reste ouverte, tu termines toi-meme.
 import os
 import stat
 import sys
+import time
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
 BASE = "https://www.wiki-masters.com"
+SCREENSHOTS = Path("captures/screenshots")
+
+# Repli si la case Cloudflare n'est pas cliquable via son DOM (constate le
+# 30/08/2026 : la case vit dans une structure imbriquee -- frame.locator()
+# et document.body.innerHTML renvoient vide -- qu'aucun selecteur
+# structurel ne parvient a percer). Coordonnees fixes valables UNIQUEMENT
+# parce que ce script force un viewport 1280x900 et que la page de login
+# est une mise en page statique centree, verifiees stables sur plusieurs
+# essais reels.
+TURNSTILE_FALLBACK_POS = (510, 552)
 
 
 def main():
@@ -63,11 +74,36 @@ def main():
         page.fill("#password", password)
 
         # Laisse le temps a Turnstile de se resoudre automatiquement
-        # (observe : quelques secondes suffisent avec ces flags).
+        # (observe : ca marche la plupart du temps avec ces flags, mais pas
+        # toujours -- constate le 30/08/2026 sur un 3e compte). Repli 1 :
+        # clic sur la case via son DOM. Repli 2 (si le repli 1 ne trouve
+        # rien -- la case peut vivre dans une structure imbriquee non
+        # accessible) : clic par coordonnees fixes, verifie fonctionner de
+        # facon fiable sur cette page (viewport et mise en page statiques).
         page.wait_for_timeout(3000)
+        cf_frame = None
+        for f in page.frames:
+            if "challenges.cloudflare.com" in f.url:
+                cf_frame = f
+                break
+        clicked = False
+        if cf_frame is not None:
+            try:
+                checkbox = cf_frame.locator("input[type='checkbox']")
+                if checkbox.count() > 0 and checkbox.first.is_visible():
+                    checkbox.first.click(timeout=3000)
+                    print("Case Cloudflare cliquee via son DOM.")
+                    clicked = True
+                    page.wait_for_timeout(2500)
+            except Exception:
+                pass
+        if not clicked:
+            print(f"Repli : clic par coordonnees {TURNSTILE_FALLBACK_POS}.")
+            page.mouse.click(*TURNSTILE_FALLBACK_POS)
+            page.wait_for_timeout(2500)
 
         try:
-            page.get_by_role("button", name="Connexion", exact=True).click(timeout=5000)
+            page.get_by_role("button", name="Connexion", exact=True).click(timeout=8000)
         except Exception as e:
             print(f"Clic sur 'Connexion' impossible ({e.__class__.__name__}) — complete a la main.")
 
@@ -83,10 +119,20 @@ def main():
         if "/login" in current:
             print("\nToujours sur /login — la connexion automatique n'a pas abouti")
             print("(Turnstile a peut-etre demande une interaction, ou identifiants incorrects).")
-            print("Termine la connexion a la main dans la fenetre Chrome, puis reviens ici.")
-            input("Appuie sur Entree une fois connecte...")
-            page = ctx.pages[-1]
-            current = page.url
+            SCREENSHOTS.mkdir(parents=True, exist_ok=True)
+            shot = SCREENSHOTS / f"login-fail-{time.strftime('%Y%m%d-%H%M%S')}.png"
+            try:
+                page.screenshot(path=str(shot))
+                print(f"Capture d'ecran : {shot.resolve()}")
+            except Exception:
+                pass
+            try:
+                print("Termine la connexion a la main dans la fenetre Chrome, puis reviens ici.")
+                input("Appuie sur Entree une fois connecte...")
+                page = ctx.pages[-1]
+                current = page.url
+            except EOFError:
+                print("(pas de terminal interactif ici -- pas d'attente manuelle possible)")
             if "/login" in current:
                 print(f"\nToujours sur {current} — rien sauvegarde.")
                 browser.close()
