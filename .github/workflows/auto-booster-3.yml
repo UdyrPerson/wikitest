@@ -51,8 +51,15 @@ jobs:
       - name: Jitter aleatoire (0-15s) avant l'appel
         run: python -c "import random, time; time.sleep(random.uniform(0, 15))"
 
+      # --count 30 (etait 10) : le 31/08/2026, apres un trou de 127 min
+      # dans les crons, compte 1 avait 13 paquets en attente -- la boucle
+      # s'est arretee a 10 par NOTRE limite et en a laisse 3 sur la table.
+      # La charge du jeu ne plafonne donc pas a 10 comme suppose. Monter la
+      # limite ne coute rien : open_via_api() sort des que packs_remaining
+      # tombe a 0, donc un run sans paquet reste aussi court qu'avant. 30
+      # couvre ~5h d'accumulation (regeneration mesuree : ~9,6 min/paquet).
       - name: Ouvre tous les boosters disponibles (mode API, sans navigateur)
-        run: python wm_open_booster.py --api --count 10
+        run: python wm_open_booster.py --api --count 30
 
       # Renvoie la session dans le secret. Indispensable : le serveur fait
       # tourner le refresh token des que le jeton d'acces a expire, et
