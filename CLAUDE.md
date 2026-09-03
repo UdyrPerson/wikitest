@@ -119,8 +119,16 @@ va à son terme. Le champ `base_repriced_at` suggère en revanche que le site
 connaît une notion de **repositionnement de prix** — piste à explorer pour
 réagir à une enchère qui n'a pas trouvé preneur.
 
-`duration_minutes` accepte au moins **60 et 360** (6 h vérifié le
-03/09/2026).
+**Durées d'enchère : 1 h, 3 h, 6 h, 12 h ou 24 h**, rien d'autre — ce sont
+les paliers proposés par le jeu. Le serveur, lui, est plus permissif : il
+accepte toute valeur entre 10 min et 24 h (vérifié le 03/09/2026, 15 min
+accepté, 5 min refusé avec « Durée invalide (entre 10 minutes et 24
+heures) »). On s'en tient aux paliers de l'interface : une annonce d'une
+durée que le jeu ne propose pas se signale comme automatisée.
+
+Une carte mise en vente **reste visible dans la collection**. Sans exclusion
+explicite des cartes déjà en vente, on les remettrait en vente à chaque
+passage.
 
 ## Les scripts
 

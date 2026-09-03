@@ -37,13 +37,31 @@ STRATEGIE (definie le 03/09/2026)
    Ordre de grandeur a garder en tete : a moyenne x 1.10, seules ~33% des
    ventes passees atteignaient le prix demande. Environ deux annonces sur
    trois n'auront donc pas preneur au premier tour -- c'est attendu, et
-   c'est ce que le repositionnement de prix viendra rattraper.
+   c'est ce que l'enchere degressive vient rattraper.
 
-4. Une seule annonce par carte distincte et par passage : deux exemplaires
+4. Cartes dont la moyenne n'est PAS exploitable : elles ne sont pas
+   ecartees, elles sont releguees. Elles passent toujours apres les
+   cartes fiables, quel que soit leur score, et ne servent qu'a occuper un
+   emplacement dont aucune carte fiable ne veut -- un emplacement vide ne
+   rapporte rien.
+
+   Leur prix suit une ENCHERE DEGRESSIVE : on part de la valeur maximale
+   jamais atteinte par la carte, et chaque passage sans acheteur divise le
+   prix par deux, jusqu'au plancher de PRIX_PLANCHER. Ces cartes sont
+   typiquement bimodales (une masse de ventes au plancher, quelques
+   envolees) : partir du haut ne coute que du temps, alors que partir du
+   bas laisserait passer l'envolee.
+
+   L'etat de la descente n'est pas stocke localement -- un runner GitHub
+   part d'un checkout propre. Il est relu depuis l'historique du compte
+   (voir derniers_prix).
+
+5. Une seule annonce par carte distincte et par passage : deux exemplaires
    de la meme carte mis en vente ensemble se concurrencent et tirent le
    prix vers le bas.
 
-La duree de 6 h (DUREE_MIN) et la marge de 10% viennent de la consigne.
+La duree de 6 h (DUREE_MIN) et la marge de 10% viennent de la consigne, de
+meme que la liste des durees autorisees (DUREES_VALIDES).
 """
 
 import json
@@ -62,6 +80,15 @@ REF = Path("reference")
 DELAY = (2.0, 3.0)
 
 MARGE = 1.10
+
+# Durees proposees par le jeu : 1 h, 3 h, 6 h, 12 h, 24 h. Rien d'autre.
+#
+# Le serveur est plus permissif que ca -- il accepte n'importe quelle valeur
+# entre 10 min et 24 h (verifie le 03/09/2026 : 15 min accepte, 5 min
+# refuse avec "Duree invalide (entre 10 minutes et 24 heures)"). On s'en
+# tient malgre tout aux paliers de l'interface : une annonce a une duree
+# que le jeu ne propose pas se signale comme automatisee.
+DUREES_VALIDES = (60, 180, 360, 720, 1440)
 DUREE_MIN = 360  # 6 h
 SLOTS_MAX = 3    # consigne ; borne aussi par ce que renvoie le serveur
 
@@ -69,6 +96,11 @@ SLOTS_MAX = 3    # consigne ; borne aussi par ce que renvoie le serveur
 # dispersion interquartile, pas sur l'ecart min-max.
 DISPERSION_MAX = 0.70
 N_MIN = 5
+
+# Prix plancher. Toutes les raretes montrent une masse de ventes a
+# exactement 10 wb : c'est le plancher pratique du marche, et la division
+# par deux des cartes non fiables s'y arrete.
+PRIX_PLANCHER = 10
 
 
 def charger_reference(rarity: str):
@@ -128,6 +160,31 @@ def cartes_deja_en_vente(req_ctx):
     return out
 
 
+def derniers_prix(req_ctx):
+    """Dernier prix demande pour chaque carte restee invendue.
+
+    C'est la memoire de l'enchere degressive, et elle vit sur le site, pas
+    en local : un runner GitHub part d'un checkout propre, un fichier
+    d'etat ne survivrait pas d'un run a l'autre.
+
+    On retient le prix le PLUS BAS vu pour une carte, ce qui donne le
+    dernier palier atteint sans avoir a trier par date : les prix ne font
+    que descendre, division par deux apres division par deux."""
+    r = req_ctx.get("/api/marketplace?page=1&limit=50&sort=ending_soon&mine=1")
+    if r.status >= 400:
+        return {}
+    out = {}
+    for a in r.json().get("history") or []:
+        # Une annonce qui a trouve preneur ne se rejoue pas.
+        if a.get("winner_id") or a.get("final_price"):
+            continue
+        cid = a.get("card_id") or (a.get("card") or {}).get("id")
+        prix = a.get("base_amount")
+        if cid and prix is not None and (cid not in out or prix < out[cid]):
+            out[cid] = prix
+    return out
+
+
 def proba_vente(prix_observes, demande: float) -> float:
     """Part des ventes passees qui ont atteint ou depasse le prix demande."""
     if not prix_observes:
@@ -135,8 +192,35 @@ def proba_vente(prix_observes, demande: float) -> float:
     return sum(1 for p in prix_observes if p >= demande) / len(prix_observes)
 
 
-def candidats(rows, ref, exclues):
-    """Possessions vendables, evaluees et triees par esperance de gain."""
+def prix_degressif(fiche, dernier_demande):
+    """Prix d'une carte dont la moyenne n'est pas exploitable.
+
+    Enchere degressive : on part de la VALEUR MAXIMALE jamais atteinte par
+    la carte, et chaque passage infructueux divise le prix par deux. Ces
+    cartes sont typiquement bimodales -- une masse de ventes au plancher et
+    quelques envolees -- donc partir du haut coute juste du temps, alors
+    que partir du bas laisserait passer l'envolee.
+
+    L'etat n'est pas stocke localement : un runner GitHub part d'un
+    checkout propre. On repart du dernier prix demande, relu sur le site.
+    """
+    if dernier_demande is None:
+        return max(int(fiche["max"]), PRIX_PLANCHER)
+    return max(int(dernier_demande) // 2, PRIX_PLANCHER)
+
+
+def candidats(rows, ref, exclues, derniers=None):
+    """Possessions vendables, en deux niveaux de priorite.
+
+    Niveau 1 -- la moyenne est exploitable : prix = moyenne x MARGE,
+    classement par esperance de gain.
+
+    Niveau 2 -- elle ne l'est pas : enchere degressive depuis le maximum.
+    Ces cartes passent TOUJOURS apres les autres, quel que soit leur score,
+    et ne servent qu'a occuper un emplacement dont personne d'autre ne veut
+    (consigne du 03/09/2026). Un emplacement vide ne rapporte rien.
+    """
+    derniers = derniers or {}
     out, vus = [], set()
     for row in rows:
         card = row.get("card") or {}
@@ -145,19 +229,18 @@ def candidats(rows, ref, exclues):
             continue
 
         fiche = ref.get(cid)
-        if not fiche:
+        if not fiche or fiche["med"] <= 0:
             continue  # carte absente de la table : aucun prix de reference
 
-        if fiche["n"] < N_MIN or fiche["med"] <= 0:
-            continue
         dispersion = (fiche["q3"] - fiche["q1"]) / fiche["med"]
-        if dispersion > DISPERSION_MAX:
-            continue
+        fiable = fiche["n"] >= N_MIN and dispersion <= DISPERSION_MAX
 
-        demande = int(round(fiche["moy"] * MARGE))
+        if fiable:
+            demande = int(round(fiche["moy"] * MARGE))
+        else:
+            demande = prix_degressif(fiche, derniers.get(cid))
         if demande <= 0:
             continue
-        p = proba_vente(fiche["prix"], demande)
 
         vus.add(cid)
         out.append({
@@ -168,12 +251,18 @@ def candidats(rows, ref, exclues):
             "n": fiche["n"],
             "moyenne": fiche["moy"],
             "dispersion": dispersion,
+            "niveau": 1 if fiable else 2,
             "demande": demande,
-            "p_vente": p,
-            "score": demande * p,
+            "p_vente": proba_vente(fiche["prix"], demande),
         })
 
-    out.sort(key=lambda c: c["score"], reverse=True)
+    for c in out:
+        c["score"] = c["demande"] * c["p_vente"]
+
+    # Le niveau prime sur le score : une carte non fiable ne passe jamais
+    # devant une carte fiable, meme si son esperance calculee est plus
+    # elevee.
+    out.sort(key=lambda c: (c["niveau"], -c["score"]))
     return out
 
 
@@ -206,6 +295,11 @@ def main():
 
     raretes = [r.strip().upper() for r in (opt("--rarities", "L")).split(",") if r.strip()]
     duree = int(opt("--duration", DUREE_MIN))
+    if duree not in DUREES_VALIDES:
+        raise SystemExit(
+            f"REFUS : duree {duree} min. Le jeu ne propose que "
+            f"{', '.join(str(d) for d in DUREES_VALIDES)} minutes."
+        )
     marge = float(opt("--margin", MARGE))
     go = "--go" in argv
 
@@ -220,7 +314,11 @@ def main():
 
             exclues = cartes_deja_en_vente(ctx)
             if exclues:
-                print(f"{len(exclues)} carte(s) deja sur le marche, ecartee(s).\n")
+                print(f"{len(exclues)} carte(s) deja sur le marche, ecartee(s).")
+            derniers = derniers_prix(ctx)
+            if derniers:
+                print(f"{len(derniers)} carte(s) invendue(s) precedemment : prix divise par deux.")
+            print()
 
             tous = []
             for rarete in raretes:
@@ -228,20 +326,24 @@ def main():
                 if not ref:
                     continue
                 rows = collection(ctx, rarete)
-                cands = candidats(rows, ref, exclues)
-                print(f"## {rarete} — {len(rows)} possession(s), {len(cands)} vendable(s) apres filtrage")
+                cands = candidats(rows, ref, exclues, derniers)
+                n1 = sum(1 for c in cands if c["niveau"] == 1)
+                print(f"## {rarete} — {len(rows)} possession(s), "
+                      f"{n1} fiable(s) + {len(cands) - n1} en enchere degressive")
                 tous += cands
 
             if not tous:
                 print("\nAucune carte ne passe les criteres.")
                 return
 
-            tous.sort(key=lambda c: c["score"], reverse=True)
-            print(f"\n{'':2s} {'carte':40s} {'n':>4s} {'moy':>8s} {'disp':>5s} {'demande':>8s} {'p':>5s} {'score':>8s}")
-            for i, c in enumerate(tous[:10], 1):
+            tous.sort(key=lambda c: (c["niveau"], -c["score"]))
+            print(f"\n{'':2s} {'niv':>3s} {'carte':38s} {'n':>4s} {'moy':>8s} {'disp':>6s} "
+                  f"{'demande':>8s} {'p':>5s} {'score':>8s}")
+            for i, c in enumerate(tous[:12], 1):
                 marque = "->" if i <= libres else "  "
-                print(f"{marque} {c['titre'][:40]:40s} {c['n']:>4d} {c['moyenne']:>8.0f} "
-                      f"{c['dispersion']:>5.2f} {c['demande']:>8d} {c['p_vente']:>5.0%} {c['score']:>8.0f}")
+                print(f"{marque} {c['niveau']:>3d} {c['titre'][:38]:38s} {c['n']:>4d} "
+                      f"{c['moyenne']:>8.0f} {c['dispersion']:>6.2f} {c['demande']:>8d} "
+                      f"{c['p_vente']:>5.0%} {c['score']:>8.0f}")
 
             retenues = tous[:libres]
             if not go:
