@@ -115,9 +115,18 @@ avoir ses propres annonces revient à s'interdire 50 cartes prises au hasard
 repérer les annonces à repositionner.
 
 Aucun endpoint de **retrait** d'enchère n'a été observé : une annonce postée
-va à son terme. Le champ `base_repriced_at` suggère en revanche que le site
-connaît une notion de **repositionnement de prix** — piste à explorer pour
-réagir à une enchère qui n'a pas trouvé preneur.
+va à son terme.
+
+**Cycle d'une annonce invendue** (vérifié de bout en bout le 03/09/2026) :
+
+1. à `end_at`, le statut passe à **`settled_unsold`** et `settled_at` est
+   renseigné dans les 5 secondes ; `winner_id` et `final_price` restent nuls ;
+2. l'annonce quitte `selling` pour **`history`**, en conservant son
+   `base_amount` — c'est ce qui permet de retrouver le dernier prix demandé
+   sans stocker d'état localement ;
+3. la carte **revient dans la collection**, mais **pas immédiatement** :
+   absente ~2 min après le règlement, présente quelques minutes plus tard. Un
+   traitement qui passerait juste après l'expiration ne la verrait pas encore.
 
 **Durées d'enchère : 1 h, 3 h, 6 h, 12 h ou 24 h**, rien d'autre — ce sont
 les paliers proposés par le jeu. Le serveur, lui, est plus permissif : il
