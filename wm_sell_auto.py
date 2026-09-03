@@ -81,14 +81,15 @@ DELAY = (2.0, 3.0)
 
 MARGE = 1.10
 
-# Durees proposees par le jeu : 1 h, 3 h, 6 h, 12 h, 24 h. Rien d'autre.
+# Les sept paliers proposes par l'interface du jeu :
+# 10 min, 30 min, 1 h, 3 h, 6 h, 12 h, 24 h.
 #
-# Le serveur est plus permissif que ca -- il accepte n'importe quelle valeur
-# entre 10 min et 24 h (verifie le 03/09/2026 : 15 min accepte, 5 min
+# Le serveur, lui, est plus permissif : il accepte n'importe quelle valeur
+# entre 10 min et 24 h (verifie le 03/09/2026 -- 15 min accepte, 5 min
 # refuse avec "Duree invalide (entre 10 minutes et 24 heures)"). On s'en
-# tient malgre tout aux paliers de l'interface : une annonce a une duree
+# tient malgre tout aux paliers de l'interface : une annonce d'une duree
 # que le jeu ne propose pas se signale comme automatisee.
-DUREES_VALIDES = (60, 180, 360, 720, 1440)
+DUREES_VALIDES = (10, 30, 60, 180, 360, 720, 1440)
 DUREE_MIN = 360  # 6 h
 SLOTS_MAX = 3    # consigne ; borne aussi par ce que renvoie le serveur
 
@@ -137,7 +138,12 @@ def slots_libres(req_ctx):
     d = r.json()
     en_cours = d.get("sellingCount", 0)
     plafond = d.get("maxConcurrentAuctions", SLOTS_MAX)
-    return en_cours, plafond, max(0, min(SLOTS_MAX, plafond - en_cours))
+    # SLOTS_MAX plafonne le nombre d'encheres SIMULTANEES, pas le nombre
+    # d'ajouts par passage : on retranche ce qui tourne deja. Ecrit
+    # min(SLOTS_MAX, plafond - en_cours), un compte avec 3 annonces en
+    # cours s'en serait vu ajouter 2 de plus a chaque run, jusqu'au
+    # plafond serveur de 5.
+    return en_cours, plafond, max(0, min(SLOTS_MAX, plafond) - en_cours)
 
 
 def cartes_deja_en_vente(req_ctx):
@@ -281,8 +287,86 @@ def vendre(req_ctx, possession: str, prix: int, duree: int):
     return r.json().get("auction_id")
 
 
+def annonces_actives(req_ctx):
+    """Annonces en cours du compte, mises en forme pour le recapitulatif."""
+    r = req_ctx.get("/api/marketplace?page=1&limit=50&sort=ending_soon&mine=1")
+    if r.status >= 400:
+        return []
+    out = []
+    for a in r.json().get("selling") or []:
+        card = a.get("card") or {}
+        out.append({
+            "titre": card.get("wikipedia_title", "?"),
+            "rarete": a.get("snapshot_rarity") or card.get("rarity", "?"),
+            "prix": a.get("base_amount"),
+            "mise": a.get("current_bid"),
+            "fin": a.get("end_at", ""),
+            "auction_id": a.get("id"),
+        })
+    return out
+
+
+def emit_fragment(path, label, creees, actives):
+    """Fragment JSON par compte, fusionne ensuite par --merge.
+
+    Meme decoupage que wm_report_rares.py : chaque compte ecrit le sien
+    juste apres son passage, plutot qu'un rapport global en fin de job qui
+    obligerait a garder les cinq sessions ouvertes en parallele."""
+    Path(path).write_text(
+        json.dumps({"compte": label, "creees": creees, "actives": actives}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+
+def merge_fragments(paths):
+    """Recapitulatif Markdown, lisible tel quel dans $GITHUB_STEP_SUMMARY."""
+    frags = []
+    for p in paths:
+        try:
+            frags.append(json.loads(Path(p).read_text(encoding="utf-8")))
+        except Exception:
+            continue  # un compte en echec n'a pas de fragment : on fait sans
+
+    total_creees = sum(len(f.get("creees") or []) for f in frags)
+    total_actives = sum(len(f.get("actives") or []) for f in frags)
+    print(f"## Mises en vente — {total_creees} nouvelle(s), {total_actives} annonce(s) active(s)\n")
+
+    if not frags:
+        print("_Aucun compte n'a produit de rapport._")
+        return
+
+    for f in frags:
+        creees = {c.get("auction_id") for c in (f.get("creees") or [])}
+        actives = f.get("actives") or []
+        print(f"### {f.get('compte', '?')}\n")
+        if not actives:
+            print("_Aucune annonce active._\n")
+            continue
+        print("| Carte | Rareté | Prix | Mise | Fin | Durée | Nouvelle |")
+        print("|---|---|---|---|---|---|---|")
+        for a in actives:
+            duree = ""
+            for c in f.get("creees") or []:
+                if c.get("auction_id") == a.get("auction_id"):
+                    duree = c.get("duree_lisible", "")
+                    break
+            neuve = "oui" if a.get("auction_id") in creees else ""
+            print(f"| {a.get('titre','?')} | {a.get('rarete','?')} | {a.get('prix')} | "
+                  f"{a.get('mise') if a.get('mise') is not None else '—'} | "
+                  f"{str(a.get('fin',''))[:16].replace('T', ' ')} | {duree} | {neuve} |")
+        print()
+
+
+def duree_lisible(minutes: int) -> str:
+    return f"{minutes} min" if minutes < 60 else f"{minutes // 60} h"
+
+
 def main():
     argv = sys.argv[1:]
+
+    if argv and argv[0] == "--merge":
+        merge_fragments(argv[1:])
+        return
 
     def opt(nom, defaut=None):
         return argv[argv.index(nom) + 1] if nom in argv else defaut
@@ -302,6 +386,12 @@ def main():
         )
     marge = float(opt("--margin", MARGE))
     go = "--go" in argv
+    json_out = opt("--json-out")
+    label = opt("--label", Path(state).stem)
+
+    # Rempli au fil des mises en vente ; relu dans le finally pour que le
+    # fragment soit ecrit meme si le traitement s'arrete en route.
+    creees = []
 
     with sync_playwright() as p:
         ctx = ensure_fresh(p, state, BASE)
@@ -361,10 +451,24 @@ def main():
                 if aid:
                     print(f"  en vente — {c['titre'][:40]} a {c['demande']} wb "
                           f"(p~{c['p_vente']:.0%}) — enchere {aid}")
+                    creees.append({
+                        "auction_id": aid,
+                        "titre": c["titre"],
+                        "rarete": c["rarete"],
+                        "prix": c["demande"],
+                        "niveau": c["niveau"],
+                        "duree_min": duree,
+                        "duree_lisible": duree_lisible(duree),
+                    })
                 else:
                     print(f"  ECHEC — {c['titre'][:40]}")
                 time.sleep(random.uniform(*DELAY))
         finally:
+            if json_out:
+                try:
+                    emit_fragment(json_out, label, creees, annonces_actives(ctx))
+                except Exception as e:
+                    print(f"  (fragment non ecrit : {e.__class__.__name__})")
             persist(ctx, state)
             ctx.dispose()
 

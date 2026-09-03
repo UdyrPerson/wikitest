@@ -126,9 +126,12 @@ accepté, 5 min refusé avec « Durée invalide (entre 10 minutes et 24
 heures) »). On s'en tient aux paliers de l'interface : une annonce d'une
 durée que le jeu ne propose pas se signale comme automatisée.
 
-Une carte mise en vente **reste visible dans la collection**. Sans exclusion
-explicite des cartes déjà en vente, on les remettrait en vente à chaque
-passage.
+Une carte mise en vente **quitte la collection** le temps de l'enchère
+(vérifié le 03/09/2026 : compte 5, unique L mise en vente, `/api/my-collection`
+la renvoie ensuite vide et la carte apparaît dans `selling`). L'exclusion des
+cartes déjà en vente est donc une ceinture-bretelles : elle ne sert que si le
+compte détient plusieurs exemplaires de la même carte, cas où l'on ne veut pas
+les mettre en concurrence.
 
 ## Les scripts
 
