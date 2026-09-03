@@ -1,0 +1,129 @@
+name: Ouverture boosters (5 comptes, sequentiel)
+
+# Remplace les cinq workflows auto-booster*.yml et l'orchestrateur
+# open-all-boosters.yml, fusionnes le 03/09/2026.
+#
+# Pourquoi la fusion :
+#   1. Cout. GitHub facture A LA MINUTE ENTAMEE ET PAR JOB. Cinq jobs de
+#      30 s coutaient 5 minutes ; un seul job qui enchaine les cinq comptes
+#      en coute 2 a 3. C'est ce qui a fait exploser le quota (2 000 min/mois
+#      en depot prive) et bloque tous les workflows le 03/09.
+#   2. Simplicite. Un seul fichier, un seul cron, un seul endroit a lire.
+#
+# Ce qu'on abandonne : le decalage anti-correlation entre comptes. Les cinq
+# comptes ouvrent desormais leurs paquets a quelques minutes d'intervalle
+# dans le meme run, au lieu d'etre repartis sur le cycle. Choix explicite de
+# l'utilisateur le 03/09/2026. Les garde-fous qui restent : 5-10 s entre
+# deux ouvertures (API_DELAY), jitter aleatoire en tete de run, et l'ordre
+# sequentiel -- jamais deux comptes en parallele.
+#
+# Chaque compte repousse SA session dans SON secret juste apres son
+# passage, jamais tous a la fin : sinon ce workflow ecraserait un secret
+# rafraichi entre-temps par un autre, avec un refresh token deja consomme a
+# la cle -- ce qui revoque la session (cf wm_session_io.py).
+#
+# Cadence 50 min, six lignes cron car 50 ne divise pas 60 : le motif ne se
+# referme qu'au bout de 5 h (PPCM de 50 et 60). "*/50" est invalide sur le
+# champ des minutes.
+
+on:
+  schedule:
+    - cron: "0 0,5,10,15,20 * * *"
+    - cron: "10 4,9,14,19 * * *"
+    - cron: "20 3,8,13,18,23 * * *"
+    - cron: "30 2,7,12,17,22 * * *"
+    - cron: "40 1,6,11,16,21 * * *"
+    - cron: "50 0,5,10,15,20 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wm-boosters
+  cancel-in-progress: false
+
+jobs:
+  open:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Installe Playwright (client API seulement, pas de navigateur)
+        run: pip install playwright
+
+      - name: Ecrit les sessions des cinq comptes depuis les secrets
+        env:
+          WM_TEST_STORAGE_STATE: ${{ secrets.WM_TEST_STORAGE_STATE }}
+          WM_TEST2_STORAGE_STATE: ${{ secrets.WM_TEST2_STORAGE_STATE }}
+          WM_TEST3_STORAGE_STATE: ${{ secrets.WM_TEST3_STORAGE_STATE }}
+          WM_TEST4_STORAGE_STATE: ${{ secrets.WM_TEST4_STORAGE_STATE }}
+          WM_TEST5_STORAGE_STATE: ${{ secrets.WM_TEST5_STORAGE_STATE }}
+        run: |
+          python -c "import os, pathlib; pathlib.Path('state1.json').write_text(os.environ['WM_TEST_STORAGE_STATE'])"
+          python -c "import os, pathlib; pathlib.Path('state2.json').write_text(os.environ['WM_TEST2_STORAGE_STATE'])"
+          python -c "import os, pathlib; pathlib.Path('state3.json').write_text(os.environ['WM_TEST3_STORAGE_STATE'])"
+          python -c "import os, pathlib; pathlib.Path('state4.json').write_text(os.environ['WM_TEST4_STORAGE_STATE'])"
+          python -c "import os, pathlib; pathlib.Path('state5.json').write_text(os.environ['WM_TEST5_STORAGE_STATE'])"
+
+      - name: Jitter aleatoire (0-15s)
+        run: python -c "import random, time; time.sleep(random.uniform(0, 15))"
+
+      # --count 30 : notre ancienne limite de 10 laissait des paquets non
+      # ouverts apres un trou de cron (constate le 31/08 : 13 paquets en
+      # attente, 3 abandonnes). Ne coute rien -- open_via_api() sort des que
+      # packs_remaining tombe a 0. continue-on-error : la panne d'un compte
+      # ne doit pas priver les suivants de leur ouverture.
+      - name: Compte 1 -> ouvre tous ses boosters
+        continue-on-error: true
+        run: python wm_open_booster.py --api --count 30 --state state1.json
+
+      - name: Compte 1 -> sauvegarde la session
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh secret set WM_TEST_STORAGE_STATE --repo ${{ github.repository }} < state1.json
+
+      - name: Compte 2 -> ouvre tous ses boosters
+        continue-on-error: true
+        run: python wm_open_booster.py --api --count 30 --state state2.json
+
+      - name: Compte 2 -> sauvegarde la session
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh secret set WM_TEST2_STORAGE_STATE --repo ${{ github.repository }} < state2.json
+
+      - name: Collecteur -> ouvre tous ses boosters
+        continue-on-error: true
+        run: python wm_open_booster.py --api --count 30 --state state3.json
+
+      - name: Collecteur -> sauvegarde la session
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh secret set WM_TEST3_STORAGE_STATE --repo ${{ github.repository }} < state3.json
+
+      - name: Compte 4 -> ouvre tous ses boosters
+        continue-on-error: true
+        run: python wm_open_booster.py --api --count 30 --state state4.json
+
+      - name: Compte 4 -> sauvegarde la session
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh secret set WM_TEST4_STORAGE_STATE --repo ${{ github.repository }} < state4.json
+
+      - name: Compte 5 -> ouvre tous ses boosters
+        continue-on-error: true
+        run: python wm_open_booster.py --api --count 30 --state state5.json
+
+      - name: Compte 5 -> sauvegarde la session
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh secret set WM_TEST5_STORAGE_STATE --repo ${{ github.repository }} < state5.json

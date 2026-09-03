@@ -1,4 +1,4 @@
-name: Defausse C/PC/R (5 comptes)
+name: Defausse C/PC/R/SR (5 comptes)
 
 # Defausse les cartes Communes/Peu Communes/Rares accumulees sur les trois
 # comptes (wm_discard.py, filtre strict --rarities C,PC,R -- jamais
@@ -74,7 +74,7 @@ jobs:
       # ou le compte 2 a bloque la defausse des comptes 4 et 5.
       - name: Compte 1 -> defausse C/PC/R
         continue-on-error: true
-        run: python wm_discard.py state1.json --rarities C,PC,R
+        run: python wm_discard.py state1.json --rarities C,PC,R,SR
 
       # Chaque compte renvoie SA session dans SON secret juste apres
       # avoir ete traite, et non tous les cinq a la fin. Sans ca, ce
@@ -94,7 +94,7 @@ jobs:
 
       - name: Compte 2 -> defausse C/PC/R
         continue-on-error: true
-        run: python wm_discard.py state2.json --rarities C,PC,R
+        run: python wm_discard.py state2.json --rarities C,PC,R,SR
 
       - name: Compte 2 -> sauvegarde la session
         if: always()
@@ -104,7 +104,7 @@ jobs:
 
       - name: Compte 3 (collecteur) -> defausse C/PC/R
         continue-on-error: true
-        run: python wm_discard.py state3.json --rarities C,PC,R
+        run: python wm_discard.py state3.json --rarities C,PC,R,SR
 
       - name: Compte 3 -> sauvegarde la session
         if: always()
@@ -114,7 +114,7 @@ jobs:
 
       - name: Compte 4 -> defausse C/PC/R
         continue-on-error: true
-        run: python wm_discard.py state4.json --rarities C,PC,R
+        run: python wm_discard.py state4.json --rarities C,PC,R,SR
 
       - name: Compte 4 -> sauvegarde la session
         if: always()
@@ -124,7 +124,7 @@ jobs:
 
       - name: Compte 5 -> defausse C/PC/R
         continue-on-error: true
-        run: python wm_discard.py state5.json --rarities C,PC,R
+        run: python wm_discard.py state5.json --rarities C,PC,R,SR
 
       - name: Compte 5 -> sauvegarde la session
         if: always()

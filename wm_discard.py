@@ -49,10 +49,53 @@ from wm_session_io import ensure_fresh, persist
 BASE = "https://www.wiki-masters.com"
 
 DELAY = (2.0, 3.0)
-DEFAULT_RARITIES = ["C", "PC", "R"]
+DEFAULT_RARITIES = ["C", "PC", "R", "SR"]
+
+# Liste blanche codee en dur. Rien d'autre ne peut etre defausse, quoi que
+# demande la ligne de commande et quoi que renvoie le serveur.
+#
+# Ce garde-fou existe a cause d'un incident reel le 30/08/2026 : une
+# approche par l'interface ("tout selectionner" puis "defausser") avait
+# defausse des SR parce que le filtre de rarete s'etait desactive entre
+# deux etapes. La lecon : ne jamais faire confiance a une selection dont on
+# ne controle pas le contenu. Ici on n'envoie que des identifiants dont on
+# a verifie la rarete un par un, juste avant l'appel.
+ALLOWED_RARITIES = {"C", "PC", "R", "SR"}
+NEVER_DISCARD = {"UR", "L"}
+
+# L'interface defausse par lots de 50 ; on s'aligne dessus.
+BATCH = 50
+
+
+def safe_ids(rows, rarity: str):
+    """Ne garde que les cartes dont la rarete est verifiee ET autorisee.
+
+    Double controle volontaire : le filtre ?rarity= est deja applique cote
+    serveur, mais on revalide chaque ligne ici. Si le filtre serveur etait
+    ignore ou changeait de semantique, une UR ou une L pourrait se glisser
+    dans la reponse -- ce garde-fou l'ecarte quoi qu'il arrive."""
+    ids, refused = [], []
+    for r in rows:
+        actual = (r.get("card") or {}).get("rarity")
+        if actual in NEVER_DISCARD or actual not in ALLOWED_RARITIES or actual != rarity:
+            refused.append((r.get("id", "?")[:8], actual))
+            continue
+        ids.append(r["id"])
+    if refused:
+        print(f"    ECARTEES (rarete inattendue) : {refused}")
+    return ids
 
 
 def discard_rarity(req_ctx, rarity: str, remaining_budget) -> int:
+    """Defausse par lots de 50 via /api/user-cards/bulk-discard.
+
+    On relit systematiquement la page 0 apres chaque lot plutot que de
+    paginer : les cartes defaussees disparaissent, donc la page 0 se
+    remplit toute seule avec les suivantes. Robuste quel que soit le
+    comportement exact de la suppression."""
+    if rarity not in ALLOWED_RARITIES:
+        raise SystemExit(f"REFUS : rarete {rarity!r} hors liste blanche {sorted(ALLOWED_RARITIES)}.")
+
     discarded = 0
     while remaining_budget[0] > 0:
         resp = req_ctx.get(f"/api/my-collection?sort=rarity&rarity={rarity}&page=0&stats=0")
@@ -75,27 +118,45 @@ def discard_rarity(req_ctx, rarity: str, remaining_budget) -> int:
         if not collection:
             break
 
-        row = collection[0]
-        user_card_id = row["id"]
-        title = row.get("card", {}).get("wikipedia_title", "?")
+        ids = safe_ids(collection, rarity)
+        if not ids:
+            # Rien d'eligible sur cette page alors qu'elle n'est pas vide :
+            # on arrete plutot que de boucler indefiniment.
+            print(f"    aucune carte eligible en page 0 pour {rarity} — on arrete")
+            break
 
-        d_resp = req_ctx.post(f"/api/user-cards/{user_card_id}/discard")
+        # remaining_budget vaut float("inf") sans --max : on ne peut pas le
+        # passer a int(), d'ou le cas separe.
+        budget = remaining_budget[0]
+        taille = BATCH if budget == float("inf") else min(BATCH, int(budget))
+        ids = ids[:taille]
+
+        d_resp = req_ctx.post("/api/user-cards/bulk-discard", data={"card_ids": ids})
         if d_resp.status == 401:
-            raise SystemExit("401 sur discard — session expiree. Relance wm_session_auto.py.")
+            raise SystemExit("401 sur bulk-discard — session expiree. Relance wm_session_auto.py.")
         if d_resp.status == 403:
-            raise SystemExit(f"403 sur discard : {d_resp.text()[:300]}")
+            raise SystemExit(f"403 sur bulk-discard : {d_resp.text()[:300]}")
         if d_resp.status == 429:
-            print("    429 sur discard : on ralentit franchement (60s)")
+            print("    429 sur bulk-discard : on ralentit franchement (60s)")
             time.sleep(60)
             continue
         if d_resp.status >= 400:
-            print(f"    {d_resp.status} sur discard de {user_card_id} ({title!r}) — on arrete cette rarete")
+            print(f"    {d_resp.status} sur bulk-discard ({rarity}) : {d_resp.text()[:200]} — on arrete")
             break
 
-        balance = d_resp.json().get("balance")
-        discarded += 1
-        remaining_budget[0] -= 1
-        print(f"    [{rarity}] defausse : {title!r} (id={user_card_id[:8]}...) — solde={balance}")
+        payload = d_resp.json()
+        n = payload.get("discarded_count", 0)
+        balance = payload.get("balance")
+        failed = payload.get("failed") or []
+        if failed:
+            print(f"    {len(failed)} echec(s) signale(s) par l'API : {failed[:3]}")
+        if n == 0:
+            print(f"    lot de {len(ids)} refuse sans erreur — on arrete pour ne pas boucler")
+            break
+
+        discarded += n
+        remaining_budget[0] -= n
+        print(f"    [{rarity}] lot de {n} carte(s) defaussee(s) — solde={balance}")
 
         if remaining_budget[0] <= 0:
             break
@@ -127,7 +188,16 @@ def main():
     rarities = DEFAULT_RARITIES
     if "--rarities" in sys.argv:
         idx = sys.argv.index("--rarities")
-        rarities = sys.argv[idx + 1].split(",")
+        rarities = [r.strip().upper() for r in sys.argv[idx + 1].split(",") if r.strip()]
+
+    # Refus net plutot qu'un filtrage silencieux : si quelqu'un demande UR
+    # ou L, c'est une erreur qu'il faut voir, pas absorber.
+    interdites = [r for r in rarities if r not in ALLOWED_RARITIES]
+    if interdites:
+        raise SystemExit(
+            f"REFUS : rarete(s) {interdites} hors liste blanche "
+            f"{sorted(ALLOWED_RARITIES)}. UR et L ne sont jamais defaussees."
+        )
 
     max_total = None
     if "--max" in sys.argv:

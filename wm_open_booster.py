@@ -699,8 +699,19 @@ def main():
     do_recon = "--recon" in sys.argv
     do_api = "--api" in sys.argv
 
-    if not STATE.exists():
-        raise SystemExit("Pas de storage_state.json — lance d'abord wm_session.py")
+    # --state permet de traiter un compte autre que storage_state.json dans
+    # le meme run : boosters.yml enchaine les cinq comptes sequentiellement
+    # (fusion du 03/09/2026), chacun avec son propre fichier de session.
+    state = STATE
+    if "--state" in sys.argv:
+        idx = sys.argv.index("--state")
+        try:
+            state = Path(sys.argv[idx + 1])
+        except IndexError:
+            raise SystemExit("--state attend un chemin, ex: --state state1.json")
+
+    if not state.exists():
+        raise SystemExit(f"{state} introuvable — lance d'abord wm_session_auto.py")
 
     if do_api:
         count = 1
@@ -712,7 +723,7 @@ def main():
                 raise SystemExit("--count attend un entier, ex: --count 5")
 
         with sync_playwright() as p:
-            req_ctx = ensure_fresh(p, STATE, BASE)
+            req_ctx = ensure_fresh(p, state, BASE)
             # try/finally : open_via_api leve SystemExit sur 401/403, et le
             # serveur a pu faire tourner le refresh token AVANT cette
             # erreur. Sans sauvegarde, la copie stockee devient perimee et
@@ -720,7 +731,7 @@ def main():
             try:
                 results = open_via_api(req_ctx, count)
             finally:
-                persist(req_ctx, STATE)
+                persist(req_ctx, state)
                 req_ctx.dispose()
 
         DATA.mkdir(exist_ok=True)
