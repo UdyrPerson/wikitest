@@ -54,9 +54,6 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # Simulation uniquement si le run est manuel ET la case cochee. Un run
-  # planifie vend toujours.
-  GO: ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '' || '--go' }}
   RARITIES: ${{ inputs.rarities || 'L' }}
 
 jobs:
@@ -92,6 +89,24 @@ jobs:
           python -c "import os, pathlib; pathlib.Path('state3.json').write_text(os.environ['WM_TEST3_STORAGE_STATE'])"
           python -c "import os, pathlib; pathlib.Path('state4.json').write_text(os.environ['WM_TEST4_STORAGE_STATE'])"
           python -c "import os, pathlib; pathlib.Path('state5.json').write_text(os.environ['WM_TEST5_STORAGE_STATE'])"
+
+      # Simulation uniquement si le run est manuel ET la case cochee ; un
+      # run planifie vend toujours.
+      #
+      # Ecrit en if/else et non avec le ternaire "a && b || c" des
+      # expressions GitHub : quand la valeur du cas vrai est la chaine vide
+      # (ce qu'on veut ici, "pas de --go"), elle est falsy et l'expression
+      # bascule sur le cas faux. Cocher dry_run aurait donc quand meme
+      # vendu, sur les cinq comptes.
+      - name: Determine le mode (vente ou simulation)
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "GO=" >> "$GITHUB_ENV"
+            echo "Mode SIMULATION : aucune mise en vente."
+          else
+            echo "GO=--go" >> "$GITHUB_ENV"
+            echo "Mode VENTE."
+          fi
 
       - name: Jitter aleatoire (0-15s)
         run: python -c "import random, time; time.sleep(random.uniform(0, 15))"
