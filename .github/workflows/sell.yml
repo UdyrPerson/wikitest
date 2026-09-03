@@ -1,0 +1,149 @@
+name: Mise en vente L (5 comptes)
+
+# Met aux encheres les meilleures cartes L de chaque compte, selon la table
+# de reference des prix reels (reference/L.json) et la strategie decrite
+# dans wm_sell_auto.py : prix = moyenne x 1.10, duree 6 h, priorisation par
+# esperance de gain.
+#
+# Extension aux UR : rien a changer ici une fois reference/UR.json construit
+# (wm_reference_build.py --rarity UR), il suffira de passer --rarities L,UR.
+# C'est pour ca que le parametre existe des maintenant.
+#
+# LA TABLE DE REFERENCE DOIT ETRE COMMITEE. data/ est dans le .gitignore et
+# un runner part d'un checkout propre : sans reference/L.json versionne, le
+# script ne trouve aucun prix et ne vend rien. C'est le role de
+# wm_reference_build.py, qui condense les 5,6 Mo du scrape en 479 Ko.
+#
+# Pure API, pas de navigateur, comme les autres workflows du projet.
+#
+# UN SEUL JOB pour les cinq comptes : GitHub facture a la minute entamee ET
+# par job (cf boosters.yml, et l'epuisement de quota du 03/09/2026).
+#
+# Chaque compte repousse SA session dans SON secret juste apres son
+# passage, jamais tous a la fin : sinon on ecrase un secret rafraichi
+# entre-temps par un autre workflow, avec un refresh token deja consomme a
+# la cle -- ce qui revoque la session (cf wm_session_io.py).
+#
+# CADENCE. Une annonce dure 6 h, donc un emplacement ne se libere qu'a ce
+# rythme : tourner toutes les 50 min comme les boosters ne servirait a
+# rien, la plupart des runs ne trouveraient aucun emplacement libre. A 3 h,
+# un emplacement libere est repris en moins de 3 h. Ce n'est pas une
+# economie de minutes (le depot est public, elles sont gratuites) mais un
+# alignement sur la duree de vie des annonces.
+
+on:
+  schedule:
+    - cron: "20 1,4,7,10,13,16,19,22 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Simulation seulement (aucune mise en vente)"
+        type: boolean
+        required: false
+        default: true
+      rarities:
+        description: "Raretes a vendre (L, ou L,UR quand UR sera scrape)"
+        required: false
+        default: "L"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wm-sell
+  cancel-in-progress: false
+
+env:
+  # Simulation uniquement si le run est manuel ET la case cochee. Un run
+  # planifie vend toujours.
+  GO: ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '' || '--go' }}
+  RARITIES: ${{ inputs.rarities || 'L' }}
+
+jobs:
+  sell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Installe Playwright (client API seulement, pas de navigateur)
+        run: pip install playwright
+
+      - name: Verifie que la table de reference est bien presente
+        run: |
+          test -f reference/L.json || {
+            echo "reference/L.json manquant : lance wm_reference_build.py et commite-le."
+            exit 1
+          }
+
+      - name: Ecrit les sessions des cinq comptes depuis les secrets
+        env:
+          WM_TEST_STORAGE_STATE: ${{ secrets.WM_TEST_STORAGE_STATE }}
+          WM_TEST2_STORAGE_STATE: ${{ secrets.WM_TEST2_STORAGE_STATE }}
+          WM_TEST3_STORAGE_STATE: ${{ secrets.WM_TEST3_STORAGE_STATE }}
+          WM_TEST4_STORAGE_STATE: ${{ secrets.WM_TEST4_STORAGE_STATE }}
+          WM_TEST5_STORAGE_STATE: ${{ secrets.WM_TEST5_STORAGE_STATE }}
+        run: |
+          python -c "import os, pathlib; pathlib.Path('state1.json').write_text(os.environ['WM_TEST_STORAGE_STATE'])"
+          python -c "import os, pathlib; pathlib.Path('state2.json').write_text(os.environ['WM_TEST2_STORAGE_STATE'])"
+          python -c "import os, pathlib; pathlib.Path('state3.json').write_text(os.environ['WM_TEST3_STORAGE_STATE'])"
+          python -c "import os, pathlib; pathlib.Path('state4.json').write_text(os.environ['WM_TEST4_STORAGE_STATE'])"
+          python -c "import os, pathlib; pathlib.Path('state5.json').write_text(os.environ['WM_TEST5_STORAGE_STATE'])"
+
+      - name: Jitter aleatoire (0-15s)
+        run: python -c "import random, time; time.sleep(random.uniform(0, 15))"
+
+      # continue-on-error sur chaque compte : une session expiree ne doit
+      # pas priver les comptes suivants de leur mise en vente.
+      - name: Compte 1 -> mise en vente
+        continue-on-error: true
+        run: python wm_sell_auto.py state1.json --rarities "$RARITIES" $GO
+
+      - name: Compte 1 -> sauvegarde la session
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh secret set WM_TEST_STORAGE_STATE --repo ${{ github.repository }} < state1.json
+
+      - name: Compte 2 -> mise en vente
+        continue-on-error: true
+        run: python wm_sell_auto.py state2.json --rarities "$RARITIES" $GO
+
+      - name: Compte 2 -> sauvegarde la session
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh secret set WM_TEST2_STORAGE_STATE --repo ${{ github.repository }} < state2.json
+
+      - name: Collecteur -> mise en vente
+        continue-on-error: true
+        run: python wm_sell_auto.py state3.json --rarities "$RARITIES" $GO
+
+      - name: Collecteur -> sauvegarde la session
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh secret set WM_TEST3_STORAGE_STATE --repo ${{ github.repository }} < state3.json
+
+      - name: Compte 4 -> mise en vente
+        continue-on-error: true
+        run: python wm_sell_auto.py state4.json --rarities "$RARITIES" $GO
+
+      - name: Compte 4 -> sauvegarde la session
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh secret set WM_TEST4_STORAGE_STATE --repo ${{ github.repository }} < state4.json
+
+      - name: Compte 5 -> mise en vente
+        continue-on-error: true
+        run: python wm_sell_auto.py state5.json --rarities "$RARITIES" $GO
+
+      - name: Compte 5 -> sauvegarde la session
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh secret set WM_TEST5_STORAGE_STATE --repo ${{ github.repository }} < state5.json
