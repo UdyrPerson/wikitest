@@ -58,6 +58,32 @@ def token_expires_in(state_path) -> float | None:
         return None
 
 
+def identite(state_path):
+    """Pseudo du compte porte par un fichier de session, ou None.
+
+    Lu hors ligne dans le jeton (user.user_metadata.username), sans le
+    moindre appel reseau.
+
+    A appeler AVANT d'ecrire une session dans un secret : le 03/09/2026,
+    une session de tigrewiki (compte 4) a ete poussee dans le secret du
+    compte 5, ecrasant celle d'oursours -- irrecuperable, un secret GitHub
+    ne se relit pas. Les deux comptes ont alors tourne sous la meme
+    identite, chacun ecrivant le jeton tourne de l'autre : exactement le
+    motif de reutilisation de refresh token qui revoque les sessions."""
+    try:
+        data = json.loads(Path(state_path).read_text(encoding="utf-8"))
+        chunks = {c["name"]: c["value"] for c in data.get("cookies", []) if "auth-token" in c["name"]}
+        if not chunks:
+            return None
+        raw = "".join(chunks[k] for k in sorted(chunks))
+        if raw.startswith("base64-"):
+            raw = raw[7:]
+        payload = json.loads(base64.b64decode(raw + "=" * (-len(raw) % 4)))
+        return ((payload.get("user") or {}).get("user_metadata") or {}).get("username")
+    except Exception:
+        return None
+
+
 def ensure_fresh(playwright, state_path, base_url):
     """Rend un contexte de requetes dont le jeton a au moins FRESH_MARGIN_S
     de duree de vie, et le chemin de session a jour.
