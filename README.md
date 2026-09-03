@@ -3,8 +3,16 @@
 Client de lecture personnel pour WikiMasters : Chrome piloté par Playwright,
 session ouverte à la main, données récupérées en JSON sur ton disque.
 
-Lecture seule. Aucun script ici n'ouvre de paquet, n'accepte d'échange ni ne
-déclenche la moindre action de jeu.
+**Ce dépôt n'est plus en lecture seule.** Il a commencé comme un simple
+lecteur, mais il agit maintenant sur le site : ouverture de boosters, défausse
+de cartes, échanges de wikibidous entre comptes, le tout automatisé sur GitHub
+Actions. Les scripts purement informationnels (`wm_report_rares.py`,
+`wm_market_scan.py`, `wm_sales_reference.py`) restent en lecture, mais ils sont
+la minorité.
+
+Ce README décrit la phase de découverte initiale. Pour l'état réel du projet —
+comptes, workflows, endpoints, et le piège des jetons Supabase qui a coûté
+plusieurs sessions — voir `CLAUDE.md`.
 
 ## Installation
 
@@ -91,7 +99,11 @@ Sur un 429, le script attend 60 secondes. Si tu en vois plusieurs, augmente
 
 ## Statut
 
-Ces scripts n'ont pas été exécutés contre le vrai site. Ils compilent, la
-structure est là, mais l'étape 2 est justement ce qui va révéler les
-ajustements nécessaires. Envoie-moi la sortie de `wm_map.py` et on cale le
-lecteur dessus.
+La découverte est faite. Le site expose de vraies routes REST `/api/...` en
+`application/json` — le scénario simple des deux décrits ci-dessus. Les
+endpoints connus sont listés dans `CLAUDE.md`, il n'y a plus besoin de rejouer
+`wm_discover.py` / `wm_map.py` sauf si le site change.
+
+Le projet a largement dépassé ce README depuis : cinq comptes, quatre workflows
+GitHub Actions, et une table de référence des prix de vente en cours de
+constitution. `CLAUDE.md` fait foi.

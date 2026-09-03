@@ -2,73 +2,306 @@
 
 ## Objectif
 
-Client de lecture personnel pour WikiMasters (https://www.wiki-masters.com),
-un jeu de collection de cartes Wikipédia. Récupérer ma collection, mon
-historique, le catalogue et mes échanges en cours, en JSON sur mon disque.
+WikiMasters (https://www.wiki-masters.com) est un jeu de collection de cartes
+Wikipédia. Le projet a commencé comme un client de **lecture** personnel ; il
+est devenu une **automatisation multi-comptes** qui tourne toute seule sur
+GitHub Actions.
 
-Je pilote un vrai Chrome via Playwright, avec ma propre session ouverte à la
-main. Le site n'a pas d'API publique documentée : tout est derrière la page de
-connexion, et `/pulls` redirige vers `/login` pour un visiteur anonyme.
+Ce qu'il fait aujourd'hui :
+
+- ouvre les boosters de 5 comptes, en continu, sans machine allumée ;
+- défausse les cartes communes (C/PC/R/SR) pour les convertir en wikibidous ;
+- consolide les wikibidous des 4 comptes émetteurs vers un compte collecteur,
+  via le système d'échange du jeu ;
+- lit le marché et construit une table de référence des prix de vente réels
+  (chantier en cours, depuis le compte premium).
+
+Le nom `wm-reader` est donc un reste historique : les scripts écrivent
+maintenant sur le site (ouverture, défausse, échanges).
 
 ## Environnement
 
 - Windows, PowerShell
-- Python 3.11 (Microsoft Store), pas encore de venv dédié
+- Python 3.11 (Microsoft Store) ; un `.venv/` existe dans le dossier
 - Chrome installé, piloté via `channel="chrome"`
 - Dossier de travail : `C:\Users\mathi\Desktop\projetwikimaster`
+- Dépôt : `github.com/UdyrPerson/wikitest`, **public** (les pseudos ont été
+  anonymisés dans le code à cette fin — commit `3f90fbf`). Les minutes Actions
+  y sont donc gratuites et illimitées
+
+## Les deux plans d'exécution
+
+Le projet vit sur deux plans qu'il ne faut pas confondre :
+
+**1. GitHub Actions — pure API, aucun navigateur.** C'est ce qui tourne en
+production, toutes les 50 min. Les sessions des 5 comptes de test vivent dans
+des secrets GitHub (`WM_TEST_STORAGE_STATE` … `WM_TEST5_STORAGE_STATE`), sont
+écrites en `state1.json` … `state5.json` au début du job, et **repoussées dans
+leur secret juste après le passage de leur compte** (voir « Le piège central »
+plus bas). Playwright n'est installé que pour son client HTTP :
+`pip install playwright`, sans `playwright install`.
+
+**2. Local — Chrome persistant via CDP.** Pour ce qui demande un vrai
+navigateur : ouvrir une session à la main, regarder une animation d'ouverture,
+travailler sur le compte premium. Le pattern est toujours le même : Chrome est
+lancé en **processus indépendant** (`CREATE_BREAKAWAY_FROM_JOB` +
+`DETACHED_PROCESS`) avec un port de débogage fixe, et Playwright s'y branche
+seulement pour piloter la page. Un Chrome lancé par `chromium.launch()` est tué
+dès que le script se termine — d'où le détour.
+
+Ports CDP : 9224–9228 pour les comptes de test, **9230 pour le premium**.
+
+## Les comptes
+
+| | Rôle |
+|---|---|
+| Comptes 1, 2, 4, 5 | Émetteurs : ouvrent des boosters, défaussent, offrent leur solde |
+| Compte 3 | **Collecteur** : ouvre et défausse aussi, mais reçoit les échanges au lieu d'en envoyer |
+| Compte premium | Compte principal, séparé de l'automatisation. Seul à voir l'historique des ventes conclues. Session dans `storage_state_premium.json` |
+
+Le pseudo du collecteur est dans le secret `WM_TRADE_RECIPIENT`, pas en dur
+dans le code. Le collecteur doit être « ami » avec chaque émetteur pour que
+l'échange passe.
+
+**`storage_state.json` porte le compte de test 1**, pas le compte principal.
+L'écraser casse l'automatisation — c'est pour ça que le premium a son propre
+fichier.
+
+## L'API du site
+
+La question ouverte des débuts (vraies routes JSON ou payloads RSC ?) est
+**tranchée : le site expose de vraies routes REST `/api/...` en
+`application/json`**. La phase de découverte (`wm_discover.py` → `wm_map.py`)
+a fait son travail et n'a plus besoin d'être rejouée sauf changement du site.
+
+Endpoints connus et utilisés :
+
+| Route | Usage |
+|---|---|
+| `POST /api/packs/open` | Ouvre un booster, renvoie les 5 cartes **déjà révélées** + `packs_remaining` |
+| `GET /api/my-collection?sort=rarity&rarity=X&page=N&stats=0` | Ma collection |
+| `POST /api/user-cards/bulk-discard` | Défausse par lots de 50 (`{"card_ids": [...]}`) |
+| `POST /api/user-cards/{user_card_id}/discard` | Défausse à l'unité (ancien chemin) |
+| `GET /api/cards?rarity=X&page=N` | Catalogue global, 50/page |
+| `GET /api/marketplace?page=N&limit=50&sort=...` | Enchères **actives** uniquement (16 793 le 03/09/2026) |
+| `POST /api/marketplace` | **Met une carte aux enchères.** `{"card_id": <user_card_id>, "base_amount": N, "duration_minutes": M}` → 201 `{"auction_id": ...}` |
+| `GET /api/marketplace/mine` | `{"sellingCount": N, "maxConcurrentAuctions": M}` — **le plafond dépend du compte** : 5 sur un compte de test, 10 sur le premium |
+| `GET /api/marketplace/{auction_id}` | L'enchère complète : carte, mises, `end_at`, `status`, `final_price`, `base_repriced_at` |
+| `GET /api/marketplace/cards/{card_id}/sales` | **Ventes conclues** (`final_price`, `settled_at`) — **premium seulement** |
+| `GET /api/friends` | Résout un pseudo en `recipient_id` |
+| `GET /api/wikibidous` | Solde courant |
+| `GET /api/trades`, `POST /api/trades`, `PATCH /api/trades/{id}` | Échanges (`{"action":"accept"}`) |
+
+Trois pièges :
+
+- `user-cards/{id}` désigne **la possession**, pas la carte (`card_id` est
+  l'identifiant global).
+- **`POST /api/marketplace` attend lui aussi l'identifiant de possession**,
+  bien que le champ s'appelle `card_id`. Preuve dans la capture du
+  29/08/2026 : le POST envoie `0ec8e44d…` et l'enchère créée renvoie
+  `card_id: e6617907…` — deux valeurs différentes.
+- La pagination de `/api/cards` n'a **pas d'ordre stable** : la même carte
+  revient sur plusieurs pages, il faut dédoublonner (776 doublons sur 1800
+  cartes L, le 03/09/2026).
+
+Et une nuance de nommage : la collection renvoie ses lignes sous la clé
+`collection`, alors que le catalogue les renvoie sous `cards`.
+
+**`mine=1` ne filtre pas.** Le paramètre laisse `auctions` sur le marché
+entier et **ajoute** à côté les tableaux `selling`, `bidding`, `history`,
+`won` — ce sont eux qui concernent le compte. Lire `auctions` en croyant
+avoir ses propres annonces revient à s'interdire 50 cartes prises au hasard
+(bug réel, corrigé le 03/09/2026). `selling` est aussi la bonne source pour
+repérer les annonces à repositionner.
+
+Aucun endpoint de **retrait** d'enchère n'a été observé : une annonce postée
+va à son terme. Le champ `base_repriced_at` suggère en revanche que le site
+connaît une notion de **repositionnement de prix** — piste à explorer pour
+réagir à une enchère qui n'a pas trouvé preneur.
+
+`duration_minutes` accepte au moins **60 et 360** (6 h vérifié le
+03/09/2026).
 
 ## Les scripts
 
+### Sessions
+
 | Fichier | Rôle |
 |---|---|
-| `wm_session.py` | Ouvre Chrome, connexion manuelle, écrit `storage_state.json` |
-| `wm_session_cdp.py` | Repli si Cloudflare bloque `wm_session.py` : se branche sur un Chrome déjà lancé à la main (`--remote-debugging-port`) au lieu d'en piloter un directement |
-| `wm_discover.py` | Rouvre Chrome avec la session, capture tous les appels réseau pendant que je navigue → `captures/` |
-| `wm_map.py` | Regroupe les captures par forme d'URL → `captures/routes.json` |
-| `wm_read.py` | Rejoue les routes trouvées et écrit le JSON → `data/` |
-| `wm_open_booster.py` | Gère la fenêtre Chrome persistante (port CDP fixe 9224, jamais fermée par le script) et l'ouverture de boosters. Sans option : ouvre/rattache la fenêtre sur `/pulls`, aucune action. `--recon` : + repère le bouton, screenshot, sans cliquer. `--click` : ouvre réellement (clic, défilement des 5 cartes, Continuer). `--api [--count N]` : appelle directement `POST /api/packs/open` sans navigateur, écrit les cartes dans `data/` — plus simple mais plus "bot-like" |
-| `wm_ouverture_booster.py` | Outil "ouvertureBooster" : ouvre un seul booster avec l'animation complète, en se rattachant à la fenêtre persistante existante (la relance si besoin) |
-| `wm_auto_booster.py` | Automatise l'ouverture en boucle toutes les ~10 min (`--interval`, `--max-runs`), intervalle volontairement randomisé (±20%) pour ne pas avoir un rythme parfaitement régulier. S'arrête tout seul si la session expire |
-| `wm_market_scan.py` | Récupère un échantillon d'enchères actives sur `/marketplace` par appel API direct (`--pages`, `--sort` parmi `ending_soon`/`recent`/`price_asc`/`price_desc`) → `data/marketplace-*.json`. Pas d'endpoint pour les ventes conclues : le seul proxy de valeur dispo est la mise actuelle sur les enchères en cours |
+| `wm_session_io.py` | **Cœur du projet.** `ensure_fresh()` / `persist()` / `token_expires_in()` : tout script authentifié doit passer par là (voir « Le piège central ») |
+| `wm_session.py` | Connexion manuelle → `storage_state.json`. Le mot de passe ne passe pas par le code |
+| `wm_session_auto.py` | Connexion **automatique** pour les comptes de test : `WM_TEST_EMAIL` / `WM_TEST_PASSWORD` en variables d'environnement, `WM_TEST_STATE_PATH` pour choisir le fichier de sortie. Gère le widget Cloudflare Turnstile |
+| `wm_session_premium.py` | Session du compte principal, en **deux temps** : un appel ouvre la fenêtre (port 9230), `--save` récupère les cookies une fois connecté. Le découpage existe parce qu'un « appuie sur Entrée » ne marche pas quand un agent lance le script sans terminal interactif |
+| `wm_session_window.py` | Généralisation du précédent à **n'importe quel compte** : `--state` + `--port`, même découpage en deux temps. C'est la seule façon de refaire une session de compte de test, la connexion automatisée échouant sur Cloudflare depuis un runner |
+| `wm_session_cdp.py` | Repli si Cloudflare bloque le Chrome piloté : Chrome lancé à la main, Playwright branché seulement après connexion |
+| `wm_open_all_sessions.py` | Ouvre une fenêtre par compte, côte à côte. **Attention** : une fenêtre laissée ouverte fait tourner le jeton et périme le secret GitHub |
 
-## Où j'en suis
+### Actions de jeu
 
-Les quatre scripts sont écrits et compilent. `wm_discover.py` a été lancé une
-fois et s'est arrêté correctement sur « Pas de storage_state.json », ce qui
-est le comportement attendu.
+| Fichier | Rôle |
+|---|---|
+| `wm_open_booster.py` | Le gros morceau (33 Ko). Gère la fenêtre persistante et l'ouverture. Sans option : ouvre/rattache, aucune action. `--recon` : repère + screenshot, sans cliquer. `--click` : animation complète. `--api [--count N] [--state F]` : `POST /api/packs/open` en direct, **c'est ce mode qu'utilisent les workflows** |
+| `wm_discard.py` | Défausse par lots de 50 via `bulk-discard`. Liste blanche stricte de raretés — refuse tout ce qui n'y est pas. Relit la page 0 après chaque lot au lieu de paginer |
+| `wm_sell_auto.py` | **Le moteur de vente.** Choisit et met en vente les meilleures cartes d'un compte : prix = moyenne × 1,10, durée 6 h, priorisation par espérance de gain. La stratégie complète et ses justifications chiffrées sont dans son docstring. `--rarities L,UR` quand UR sera prêt |
+| `wm_reference_build.py` | Condense `data/sales-{rareté}.jsonl` (5,6 Mo, non versionné) en `reference/{rareté}.json` (479 Ko, **versionné**). Sans ce fichier commité, le workflow de vente n'a aucun prix de référence sur un runner |
+| `wm_sell.py` | **Met une carte aux enchères, à la main.** Simulation par défaut, `--go` obligatoire pour écrire, et `--go` exige une possession désignée (`--card`) dont la rareté est revérifiée dans la collection avant l'appel. Lit le plafond d'emplacements au lieu de le supposer, et refuse de vendre depuis la session premium. Suggère un prix depuis `data/sales-{rareté}.jsonl` |
+| `wm_trade_gift_wb.py` | Offre **tout** le solde de wikibidous à un ami, sans carte en retour |
+| `wm_trade_accept_all.py` | Accepte toutes les offres `pending`. Ne distingue pas reçu/envoyé — à n'utiliser que sur un compte qui ne fait que recevoir |
+| `wm_ouverture_booster.py` | Outil « ouvertureBooster » : un booster avec l'animation, en réutilisant la fenêtre persistante |
+| `wm_auto_booster.py` | Boucle locale toutes les ~10 min (±20 % de variation). Largement remplacé par les workflows |
 
-Prochaine étape : lancer `wm_session.py`, puis `wm_discover.py`, puis
-`wm_map.py`. Ensuite remplir `ENDPOINTS` dans `wm_read.py` à partir de
-`captures/routes.json`.
+### Lecture et analyse
 
-## Le point technique qui va décider de la suite
+| Fichier | Rôle |
+|---|---|
+| `wm_report_rares.py` | Rapport UR/L agrégé sur plusieurs comptes + solde du collecteur. Sortie Markdown, lisible telle quelle dans `$GITHUB_STEP_SUMMARY`. Arguments en `label=chemin_session`, `--json-out` pour un fragment, `--merge` pour agréger |
+| `wm_sales_reference.py` | **Chantier en cours.** Table de référence des prix par rareté depuis le compte premium. Sortie JSONL écrite au fil de l'eau, **reprenable** : relancer saute ce qui est déjà connu. Rafraîchit le jeton en cours de boucle. `--stats-only` pour le rapport sans appel réseau |
+| `wm_scrape_launch.py` | Lance le scrape ci-dessus en **processus vraiment indépendant** (sinon un scrape de 45 min meurt avec l'outil qui l'a lancé). Journal dans `data/scrape-{rareté}.log` |
+| `wm_sales_scan.py` | Ancêtre du précédent : mêmes ventes conclues, mais sur une liste de cartes, avec vitesse adaptative |
+| `wm_market_scan.py` | Échantillon d'enchères **actives** (`--pages`, `--sort`, `--only-bid`). Utile avant de disposer des vraies ventes |
+| `wm_discover.py`, `wm_map.py`, `wm_read.py` | Outillage de découverte. Ont rempli leur rôle ; à ressortir si le site change |
 
-Le site tourne sur Vercel, avec ce qui ressemble à un Next.js App Router. Deux
-scénarios possibles à la découverte :
+## Les workflows
 
-1. De vraies routes `/api/...` renvoyant de l'`application/json` → il suffit de
-   remplir `ENDPOINTS`.
-2. Uniquement des requêtes `?_rsc=` en `text/x-component` → les données passent
-   par des React Server Components. Le format est interne à Next.js, non
-   documenté, instable entre versions mineures. Dans ce cas, passer par
-   `DOM_PAGES` dans `wm_read.py` : charger la page et lire le rendu.
+| Fichier | Cadence | Ce qu'il fait |
+|---|---|---|
+| `boosters.yml` | 50 min, minutes 0/10/20/30/40 | Les 5 comptes en **séquentiel dans un seul job**, `--count 30` chacun |
+| `discard.yml` | 50 min, +5 min | Défausse `C,PC,R,SR` sur les 5 comptes |
+| `trade.yml` | 50 min, +25 min | Les 4 émetteurs offrent leur solde, puis le collecteur accepte tout |
+| `sell.yml` | 3 h | Met en vente les meilleures L des 5 comptes. Entrée `dry_run` (vraie par défaut en manuel), `rarities` pour ajouter UR plus tard |
+| `report-rares.yml` | manuel | Lecture seule, rapport dans le résumé du run |
 
-`wm_map.py` signale le cas 2 avec un avertissement, et repère aussi les server
-actions (en-tête `Next-Action`), qui servent aux écritures et ne m'intéressent
-pas.
+Trois choses à savoir avant d'y toucher :
+
+**La cadence de 50 min n'est pas un chiffre rond par hasard.** Le jeton
+Supabase dure exactement 1 h. Un cycle plus court que l'heure évite de tomber
+systématiquement après l'expiration. Comme 50 ne divise pas 60, il faut
+**six lignes cron** pour couvrir le motif, qui ne se referme qu'au bout de 5 h
+(`*/50` est invalide sur le champ des minutes).
+
+**Un seul job, pas cinq.** GitHub facture à la minute entamée **et par job** :
+cinq jobs de 30 s coûtaient 5 minutes. C'est ce qui a fait exploser le quota
+(2 000 min/mois) et bloqué tous les workflows le 03/09/2026. La fusion coûte
+2–3 min par run. Contrepartie assumée : les comptes ne sont plus décorrélés
+dans le temps.
+
+**`continue-on-error` sur chaque compte.** Sans ça, le premier 401 arrêtait le
+job et les comptes suivants n'étaient jamais traités.
+
+## Le piège central : la rotation des jetons Supabase
+
+C'est la cause racine d'une série de « sessions expirées » incompréhensibles
+(trouvée le 30/08/2026) et la chose à comprendre avant de toucher à quoi que
+ce soit d'authentifié.
+
+Le site tourne sur Next.js + `@supabase/ssr`. Le jeton d'accès dure une heure,
+mais **ce n'est pas une limite dure** : quand une requête arrive avec un jeton
+expiré, le serveur le renouvelle lui-même depuis le refresh token et renvoie
+de **nouveaux cookies, avec un refresh token tourné**. D'où des sessions
+« expirées depuis 170 min » qui répondaient encore 200.
+
+Le piège : si on jette ces nouveaux cookies — ce que fait tout contexte
+Playwright dont on ne sauvegarde pas l'état — la copie stockée garde un refresh
+token **déjà consommé**. Supabase détecte la réutilisation et ne renvoie pas
+une simple erreur : il **révoque toute la famille de jetons**. La session meurt
+pour de bon.
+
+Les conséquences pratiques, toutes déjà payées une fois :
+
+- **Tout script authentifié appelle `persist()`**, y compris les scripts en
+  lecture seule : un simple GET suffit à déclencher la rotation.
+- **Chaque compte repousse son secret juste après son passage**, jamais tous à
+  la fin — sinon on écrase un secret qu'un autre workflow a rafraîchi
+  entre-temps (constaté sur les comptes 4 et 5, traités en dernier).
+- **On rafraîchit avant les boucles longues**, pas au milieu
+  (`FRESH_MARGIN_S` = 15 min).
+- **Un 403 n'est pas une session expirée.** Ne pas le traiter comme tel.
+- **Une fenêtre Chrome laissée ouverte périme le secret GitHub** du compte
+  concerné.
+
+## Où j'en suis (03/09/2026)
+
+**Objectif en cours : vendre automatiquement les UR/L aux enchères.** La forme
+visée est un workflow qui lit les UR/L de chaque compte, estime leur valeur de
+marché, en déduit une mise à prix, poste l'enchère, et repositionne le prix si
+l'annonce expire sans acheteur.
+
+Table de référence des prix (produite depuis le compte premium) :
+
+- rareté **L** : **terminée**, 1800/1800 cartes, dont 1798 avec des ventes
+  réelles. Médiane des médianes : **688,75 wb** ;
+- rareté **UR** : en cours, 12 257 cartes au catalogue.
+
+**La vente est testée en réel et fonctionne** (03/09/2026, compte 5, deux
+annonces créées) :
+
+- `duration_minutes: 360` est accepté — 6 h confirmées sur `end_at` ;
+- l'identifiant de possession est bien le bon : la carte mise en vente est
+  celle visée ;
+- `sell.yml` est écrit mais **jamais exécuté** ; il exige que `reference/L.json`
+  et les scripts soient commités.
+
+Trois points d'état de la machine :
+
+- **Les sessions locales des comptes 2, 3 et 4 sont périmées** (jeton expiré
+  depuis ~4 jours). Les vraies vivent dans les secrets GitHub. Ne pas les
+  rejouer telles quelles — c'est le cas de révocation. Le compte 5 a été
+  reconnecté à la main le 03/09 ; **son secret GitHub doit être repoussé**
+  avant que les workflows le reprennent.
+- **Les workflows tournent normalement**, à la cadence de 50 min prévue.
+- **Le quota Actions n'est plus une contrainte : le dépôt est public**, donc
+  les minutes sont gratuites et illimitées. L'arithmétique reste bonne à
+  connaître si le dépôt redevenait privé — à 50 min de cadence, la défausse
+  coûte ~98 min/jour et le trade ~20 min/jour, soit ~3540 min/mois hors
+  boosters, contre 2000 min gratuites en dépôt privé. Le dépassement serait
+  structurel.
+- Dépôt public et secrets : sans danger ici parce qu'**aucun workflow ne se
+  déclenche sur `pull_request`**. Un workflow déclenché par une PR venue d'un
+  fork exposerait `GH_ACTIONS_PAT` et les sessions. À ne pas oublier en
+  ajoutant un futur workflow.
+
+Non commités : `wm_sales_reference.py`, `wm_scrape_launch.py`,
+`wm_session_premium.py`, `wm_sell.py`, `wm_sell_auto.py`,
+`wm_reference_build.py`, `wm_session_window.py`, `reference/L.json` et
+`.github/workflows/sell.yml`.
 
 ## Règles à garder
 
-- `storage_state.json` vaut un mot de passe. Il est dans le `.gitignore`, il ne
-  sort pas du dossier, il ne va dans aucun dépôt.
-- `DELAY` reste à 2 secondes minimum, en séquentiel, sans parallélisme. Le
-  risque n'est pas juridique, c'est de perdre le compte.
-- Sur un 429, ralentir plutôt qu'insister.
-- Note : sous Windows, le `os.chmod` de `wm_session.py` n'agit que sur
-  l'attribut lecture seule, il ne produit pas un vrai 600.
+- **`storage_state*.json` vaut un mot de passe.** Couvert par le `.gitignore`,
+  ne sort pas du dossier.
+- **Ne jamais écraser `storage_state.json`** (compte de test 1) avec la session
+  d'un autre compte : ça casse GitHub Actions.
+- **Le mot de passe du compte principal ne passe jamais par un script.**
+  Principe posé au début, toujours valable. Les comptes de test sont
+  l'exception explicite (jetables, conséquence d'une fuite nulle).
+- **`DELAY` : 2 secondes, en séquentiel, sans parallélisme.** Le risque n'est
+  pas juridique, c'est de perdre le compte. **Exception assumée** : le scrape
+  de référence tourne à 0,2 s sur décision explicite du 03/09/2026 — lecture
+  ponctuelle et bornée, pas une activité de fond. `MIN_DELAY` refuse en dessous.
+- **Le compte premium sert au scrape de référence, à rien d'autre.** Les essais
+  d'action (vente, défausse, échange) passent par un compte de test — règle
+  posée le 03/09/2026. `wm_sell.py` refuse `--go` sur la session premium.
+- **Un seul processus à la fois par session.** Deux scripts qui font tourner le
+  même jeton en parallèle, c'est la révocation assurée : à surveiller quand
+  plusieurs agents travaillent sur le projet en même temps.
+- **Une vraie connexion peut invalider la session déjà en cours** du compte,
+  y compris celle du secret GitHub. Après une reconnexion locale, repousser
+  l'état : `gh secret set WM_TEST5_STORAGE_STATE --repo UdyrPerson/wikitest < storage_state_5.json`.
+- **Sur un 429, ralentir plutôt qu'insister** (pause de 60 s).
+- **Jamais deux comptes en parallèle**, et 5–10 s entre deux ouvertures.
+- **Le rythme n'est jamais parfaitement régulier** : jitter en tête de run,
+  ±20 % sur les boucles locales. Un cron au métronome est la signature la plus
+  facile à repérer.
+- **La console Windows est en cp1252** : afficher un titre de carte contenant
+  un caractère hors de cette table lève un `UnicodeEncodeError` qui **tue le
+  script en plein scrape**, sans rien écrire dans le journal (plusieurs
+  lancements morts silencieusement le 03/09/2026). Tout script à sortie longue
+  force `sys.stdout.reconfigure(encoding="utf-8", errors="replace")`.
+- Sous Windows, le `os.chmod` de `wm_session.py` n'agit que sur l'attribut
+  lecture seule : ce n'est pas un vrai 600.
 
 ## Piste alternative
 
 Les cartes viennent de Wikipédia. Si le besoin porte sur le catalogue global
-plutôt que sur ma collection, l'API MediaWiki et les dumps Wikimedia sont
+plutôt que sur mes comptes, l'API MediaWiki et les dumps Wikimedia sont
 ouverts, documentés et stables.
