@@ -174,11 +174,12 @@ def main():
                 cache.write_text(json.dumps(cards, ensure_ascii=False), encoding="utf-8")
             todo = [(i, t) for i, t in cards if i not in done]
             print(f"Catalogue {rarity} : {len(cards)} carte(s), {len(todo)} a traiter.")
-            eta = len(todo) * delay / 3600
+            eta = len(todo) * max(delay, 0.27) / 3600
             print(f"Duree estimee : {eta:.1f} h a {delay}s par carte.\n")
 
             with out_path.open("a", encoding="utf-8") as fh:
                 for n, (cid, title) in enumerate(todo, 1):
+                    t_iter = time.time()
                     # PAS de rafraichissement par iteration. Premiere version
                     # le faisait des qu'il restait moins de FRESH_MARGIN_S,
                     # mais le serveur ne renouvelle qu'APRES expiration : le
@@ -221,10 +222,17 @@ def main():
                     if rec.get("stats"):
                         s = rec["stats"]
                         print(f"  [{n}/{len(todo)}] {rec['titre'][:42]:42s} n={s['n']:3d} med={s['mediane']:>6} moy={s['moyenne']:>7}")
-                    elif n % 25 == 0:
+                    elif n % 250 == 0:
                         print(f"  [{n}/{len(todo)}] ... (sans vente)")
 
-                    time.sleep(random.uniform(delay, delay * 1.5))
+                    # Cadencement par DEBIT CIBLE, pas pause additive :
+                    # l'appel dure deja ~0.27s, donc ajouter 0.2s donnait
+                    # 0.47s/carte (2.1/s) alors que le plafond autorise est
+                    # 5/s. On ne dort que le reliquat, et rien si l'appel a
+                    # deja pris plus longtemps que l'intervalle visé.
+                    reste_a_attendre = delay - (time.time() - t_iter)
+                    if reste_a_attendre > 0:
+                        time.sleep(reste_a_attendre)
         finally:
             persist(ctx, STATE)
             ctx.dispose()
