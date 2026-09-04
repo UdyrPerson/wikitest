@@ -84,6 +84,7 @@ jobs:
       # l'etape d'acceptation ci-dessous de s'executer.
       - name: Compte 1 -> offre tout son solde au collecteur
         continue-on-error: true
+        id: c0
         env:
           WM_TRADE_RECIPIENT: ${{ secrets.WM_TRADE_RECIPIENT }}
         run: python wm_trade_gift_wb.py state1.json "$WM_TRADE_RECIPIENT"
@@ -106,6 +107,7 @@ jobs:
 
       - name: Compte 2 -> offre tout son solde au collecteur
         continue-on-error: true
+        id: c1
         env:
           WM_TRADE_RECIPIENT: ${{ secrets.WM_TRADE_RECIPIENT }}
         run: python wm_trade_gift_wb.py state2.json "$WM_TRADE_RECIPIENT"
@@ -118,6 +120,7 @@ jobs:
 
       - name: Compte 4 -> offre tout son solde au collecteur
         continue-on-error: true
+        id: c2
         env:
           WM_TRADE_RECIPIENT: ${{ secrets.WM_TRADE_RECIPIENT }}
         run: python wm_trade_gift_wb.py state4.json "$WM_TRADE_RECIPIENT"
@@ -130,6 +133,7 @@ jobs:
 
       - name: Compte 5 -> offre tout son solde au collecteur
         continue-on-error: true
+        id: c3
         env:
           WM_TRADE_RECIPIENT: ${{ secrets.WM_TRADE_RECIPIENT }}
         run: python wm_trade_gift_wb.py state5.json "$WM_TRADE_RECIPIENT"
@@ -148,3 +152,29 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
         run: gh secret set WM_TEST3_STORAGE_STATE --repo ${{ github.repository }} < state3.json
+
+      # Rend les comptes en echec VISIBLES. Avec continue-on-error, un
+      # compte dont la session est morte laisse le job en "success" : le
+      # compte 2 est reste en 401 sans que personne le remarque, le
+      # 04/09/2026. On resume ici qui est tombe, et on fait echouer le job
+      # pour declencher la notification GitHub habituelle.
+      - name: Signale les comptes en echec
+        if: always()
+        run: |
+          echecs=""
+          [ "${{ steps.c0.outcome }}" = "success" ] || echecs="$echecs compte1"
+          [ "${{ steps.c1.outcome }}" = "success" ] || echecs="$echecs compte2"
+          [ "${{ steps.c2.outcome }}" = "success" ] || echecs="$echecs compte4"
+          [ "${{ steps.c3.outcome }}" = "success" ] || echecs="$echecs compte5"
+          if [ -n "$echecs" ]; then
+            {
+              echo "## Comptes en echec :$echecs"
+              echo ""
+              echo "Session probablement revoquee. Reparation :"
+              echo '```'
+              echo "python wm_session_repair.py$echecs"
+              echo '```'
+            } | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "## Tous les comptes ont ete traites" | tee -a "$GITHUB_STEP_SUMMARY"
