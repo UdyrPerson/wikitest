@@ -35,6 +35,16 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
+# Console Windows en cp1252 : un titre de carte hors de cette table leve un
+# UnicodeEncodeError qui tue le script en plein milieu (invisible sur un
+# runner GitHub, fatal en local).
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
+
 from wm_session_io import ensure_fresh, persist
 
 BASE = "https://www.wiki-masters.com"
