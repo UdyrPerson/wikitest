@@ -368,6 +368,32 @@ def merge_fragments(paths):
         print("_Aucun compte n'a produit de rapport._")
         return
 
+    # Les ventes conclues d'abord : c'est le seul chiffre qui dit si la
+    # strategie rapporte quelque chose. Une carte vendue disparait de la
+    # collection sans autre trace, l'historique du compte est la seule
+    # source.
+    ventes = [(f.get("compte", "?"), v) for f in frags for v in (f.get("vendues") or [])]
+    recette = sum((v.get("final") or 0) for _, v in ventes)
+    print(f"### Ventes conclues — {len(ventes)} carte(s), {recette} wb\n")
+    if ventes:
+        print("| Carte | Rareté | Compte | Demandé | Vendu | Réglé |")
+        print("|---|---|---|---|---|---|")
+        for compte, v in sorted(ventes, key=lambda x: -(x[1].get("final") or 0)):
+            print(f"| {v.get('titre')} | {v.get('rarete')} | {compte} | {v.get('base')} | "
+                  f"**{v.get('final')}** | {str(v.get('regle', '')).replace('T', ' ')} |")
+    else:
+        print("_Aucune vente conclue pour l'instant._")
+    print()
+
+    invendues = [(f.get("compte", "?"), v) for f in frags for v in (f.get("invendues") or [])]
+    if invendues:
+        print(f"### Invendues, en attente de repositionnement — {len(invendues)}\n")
+        print("| Carte | Rareté | Compte | Dernier prix |")
+        print("|---|---|---|---|")
+        for compte, v in sorted(invendues, key=lambda x: -(x[1].get("base") or 0)):
+            print(f"| {v.get('titre')} | {v.get('rarete')} | {compte} | {v.get('base')} |")
+        print()
+
     for f in frags:
         creees = {c.get("auction_id") for c in (f.get("creees") or [])}
         actives = f.get("actives") or []
