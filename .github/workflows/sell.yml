@@ -1,13 +1,16 @@
-name: Mise en vente L (9 comptes)
+name: Mise en vente UR/L (9 comptes)
 
-# Met aux encheres les meilleures cartes L de chaque compte, selon la table
-# de reference des prix reels (reference/L.json) et la strategie decrite
-# dans wm_sell_auto.py : prix = moyenne x 1.10, duree 6 h, priorisation par
-# esperance de gain.
+# Met aux encheres les meilleures cartes UR et L de chaque compte, selon
+# les tables de reference des prix reels (reference/L.json et
+# reference/UR.json) et la strategie decrite dans wm_sell_auto.py : prix =
+# moyenne x 1.10, priorisation par esperance de gain, enchere degressive
+# sur les cartes dont le prix moyen n'est pas fiable.
 #
-# Extension aux UR : rien a changer ici une fois reference/UR.json construit
-# Les deux tables de reference existent (L et UR), donc --rarities L,UR
-# C'est pour ca que le parametre existe des maintenant.
+# LES DEUX RARETES SONT ACTIVES. Le titre a longtemps dit « L » seul : la
+# table UR n'existait pas encore et RARITIES valait L. Les deux tables sont
+# construites depuis le 04/09/2026 et la valeur par defaut est « L,UR » --
+# ce sont d'ailleurs surtout des UR qui se vendent. L'entree `rarities`
+# permet de restreindre pour un run manuel.
 #
 # LA TABLE DE REFERENCE DOIT ETRE COMMITEE. data/ est dans le .gitignore et
 # un runner part d'un checkout propre : sans reference/L.json versionne, le
@@ -24,16 +27,33 @@ name: Mise en vente L (9 comptes)
 # entre-temps par un autre workflow, avec un refresh token deja consomme a
 # la cle -- ce qui revoque la session (cf wm_session_io.py).
 #
-# CADENCE. Une annonce dure 6 h, donc un emplacement ne se libere qu'a ce
-# rythme : tourner toutes les 50 min comme les boosters ne servirait a
-# rien, la plupart des runs ne trouveraient aucun emplacement libre. A 3 h,
-# un emplacement libere est repris en moins de 3 h. Ce n'est pas une
-# economie de minutes (le depot est public, elles sont gratuites) mais un
-# alignement sur la duree de vie des annonces.
+# CADENCE : TOUTES LES HEURES depuis le 04/09/2026, contre 3 h avant.
+#
+# Le raisonnement d'origine etait qu'une annonce durant 6 h, un emplacement
+# ne se libere pas plus vite, donc passer souvent ne servirait a rien. Il
+# est faux : les 5 emplacements d'un compte n'expirent pas ensemble, ils se
+# liberent un par un, a n'importe quelle heure. Entre deux passages,
+# l'emplacement libere ne rapporte rien.
+#
+# Mesure du 04/09/2026 : le run planifie de 12:10 n'a demarre qu'a 14:56,
+# retenu 2 h 46 par le groupe de concurrence wm-sessions (boosters,
+# defausse et trade le prennent toutes les 50 min). Le collecteur avait
+# alors 0 annonce sur 5 : ses cinq emplacements sont restes vides toute la
+# duree de l'attente. A l'heure, un creneau rate coute au pire une heure.
+#
+# Le cout est nul (depot public, minutes gratuites) et le run dure ~4 min.
+# Effet de bord assume et souhaitable : GitHub n'autorise qu'un seul run en
+# attente par groupe de concurrence, donc un run de vente encore en file
+# est remplace par le suivant. C'est le bon comportement -- on veut l'etat
+# du marche le plus recent, pas une commande vieille de trois heures.
+#
+# La minute 50 est choisie a l'ecart des autres workflows (boosters aux
+# minutes 0/10/20/30/40, defausse a +5, trade a +25) : ca ne supprime pas
+# la mise en file, ca la raccourcit.
 
 on:
   schedule:
-    - cron: "20 1,4,7,10,13,16,19,22 * * *"
+    - cron: "50 * * * *"
   workflow_dispatch:
     inputs:
       dry_run:

@@ -225,7 +225,7 @@ les mettre en concurrence.
 | `boosters.yml` | 50 min, minutes 0/10/20/30/40 | Les 9 comptes en **séquentiel dans un seul job**, `--count 10` chacun (voir la limite quotidienne) |
 | `discard.yml` | 50 min, +5 min | Défausse `C,PC,R,SR` sur les 9 comptes |
 | `trade.yml` | 50 min, +25 min | Les 4 émetteurs offrent leur solde, puis le collecteur accepte tout |
-| `sell.yml` | 3 h | Met en vente les meilleures L des 9 comptes. Entrée `dry_run` (vraie par défaut en manuel), `rarities` pour ajouter UR plus tard |
+| `sell.yml` | 1 h, minute 50 | Met en vente les meilleures **UR et L** des 9 comptes. Entrée `dry_run` (vraie par défaut en manuel), `rarities` pour restreindre |
 | `report-rares.yml` | manuel | Lecture seule, rapport dans le résumé du run |
 
 Trois choses à savoir avant d'y toucher :
@@ -344,8 +344,8 @@ annonces) :
 - `duration_minutes: 360` est accepté — 6 h confirmées sur `end_at` ;
 - l'identifiant de possession est bien le bon : la carte mise en vente est
   celle visée ;
-- `sell.yml` est écrit mais **jamais exécuté** ; il exige que `reference/L.json`
-  et les scripts soient commités.
+- `sell.yml` tourne depuis le 04/09 ; il exige que `reference/L.json` et
+  `reference/UR.json` soient commités.
 
 Trois points d'état de la machine :
 
