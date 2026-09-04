@@ -13,11 +13,13 @@ Ce qu'il fait aujourd'hui :
 - défausse les cartes communes (C/PC/R/SR) pour les convertir en wikibidous ;
 - consolide les wikibidous des 4 comptes émetteurs vers un compte collecteur,
   via le système d'échange du jeu ;
-- lit le marché et construit une table de référence des prix de vente réels
-  (chantier en cours, depuis le compte premium).
+- lit le marché depuis le compte premium et en tire une table de référence
+  des prix de vente réels (**terminée** : 1798 L et 12 245 UR) ;
+- met automatiquement aux enchères les meilleures L et UR de chaque compte,
+  et repositionne le prix des invendues.
 
 Le nom `wm-reader` est donc un reste historique : les scripts écrivent
-maintenant sur le site (ouverture, défausse, échanges).
+maintenant sur le site (ouverture, défausse, échanges, mises en vente).
 
 ## Environnement
 
@@ -128,8 +130,8 @@ va à son terme.
    absente ~2 min après le règlement, présente quelques minutes plus tard. Un
    traitement qui passerait juste après l'expiration ne la verrait pas encore.
 
-**Durées d'enchère : 1 h, 3 h, 6 h, 12 h ou 24 h**, rien d'autre — ce sont
-les paliers proposés par le jeu. Le serveur, lui, est plus permissif : il
+**Durées d'enchère : 10 min, 30 min, 1 h, 3 h, 6 h, 12 h ou 24 h**, rien
+d'autre — ce sont les sept paliers proposés par l'interface du jeu. Le serveur, lui, est plus permissif : il
 accepte toute valeur entre 10 min et 24 h (vérifié le 03/09/2026, 15 min
 accepté, 5 min refusé avec « Durée invalide (entre 10 minutes et 24
 heures) »). On s'en tient aux paliers de l'interface : une annonce d'une
