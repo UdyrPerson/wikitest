@@ -6,7 +6,7 @@ name: Mise en vente L (5 comptes)
 # esperance de gain.
 #
 # Extension aux UR : rien a changer ici une fois reference/UR.json construit
-# (wm_reference_build.py --rarity UR), il suffira de passer --rarities L,UR.
+# Les deux tables de reference existent (L et UR), donc --rarities L,UR
 # C'est pour ca que le parametre existe des maintenant.
 #
 # LA TABLE DE REFERENCE DOIT ETRE COMMITEE. data/ est dans le .gitignore et
@@ -42,7 +42,7 @@ on:
         required: false
         default: true
       rarities:
-        description: "Raretes a vendre (L, ou L,UR quand UR sera scrape)"
+        description: "Raretes a vendre (ex. L ou L,UR)"
         required: false
         default: "L,UR"
       duration:
