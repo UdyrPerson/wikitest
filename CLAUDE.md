@@ -179,6 +179,7 @@ les mettre en concurrence.
 | `wm_session_auto.py` | Connexion **automatique** pour les comptes de test : `WM_TEST_EMAIL` / `WM_TEST_PASSWORD` en variables d'environnement, `WM_TEST_STATE_PATH` pour choisir le fichier de sortie. Gère le widget Cloudflare Turnstile |
 | `wm_session_premium.py` | Session du compte principal, en **deux temps** : un appel ouvre la fenêtre (port 9230), `--save` récupère les cookies une fois connecté. Le découpage existe parce qu'un « appuie sur Entrée » ne marche pas quand un agent lance le script sans terminal interactif |
 | `wm_session_window.py` | Généralisation du précédent à **n'importe quel compte** : `--state` + `--port`, même découpage en deux temps. C'est la seule façon de refaire une session de compte de test, la connexion automatisée échouant sur Cloudflare depuis un runner |
+| `wm_session_repair.py` | **Refait la session d'un compte et la pousse dans son secret, en une commande.** `python wm_session_repair.py compte2` ou `--all`. Écrit d'abord dans un fichier temporaire et ne remplace la session qu'une fois `identite()` confirmé — sur écart, il supprime et laisse le secret intact. Identifiants dans `wm_comptes.json` (couvert par le `.gitignore`) ou dans l'environnement |
 | `wm_session_cdp.py` | Repli si Cloudflare bloque le Chrome piloté : Chrome lancé à la main, Playwright branché seulement après connexion |
 | `wm_open_all_sessions.py` | Ouvre une fenêtre par compte, côte à côte. **Attention** : une fenêtre laissée ouverte fait tourner le jeton et périme le secret GitHub |
 
@@ -339,6 +340,12 @@ Trois points d'état de la machine :
   `oursours` pour réparer. D'où `wm_session_io.identite()` et l'option
   `--expect` : **vérifier le pseudo avant d'écrire dans un secret**.
 - **Les workflows tournent normalement**, à la cadence de 50 min prévue.
+- **Les comptes 2 et 3 ont été révoqués puis réparés** le 04/09 : ils étaient
+  les plus exposés aux chevauchements de workflows (ceux qui bouclaient sur
+  les 429). Un job qui reste vert alors qu'un compte est en 401 étant
+  invisible, chaque workflow **signale désormais les comptes en échec** dans
+  le résumé du run, donne la commande de réparation, et fait échouer le job
+  pour déclencher la notification.
 - **Résolu : les 429 des comptes 2 et 3 étaient la limite quotidienne.**
   Ils saturaient `--count 30` à chaque run (30 paquets toutes les 50 min)
   et ont épuisé leur quota du jour ; les comptes 1 et 4, qui vident leur
@@ -383,8 +390,14 @@ Tout est commité et poussé sur `main`.
   même jeton en parallèle, c'est la révocation assurée : à surveiller quand
   plusieurs agents travaillent sur le projet en même temps.
 - **Une vraie connexion peut invalider la session déjà en cours** du compte,
-  y compris celle du secret GitHub. Après une reconnexion locale, repousser
-  l'état : `gh secret set WM_TEST5_STORAGE_STATE --repo UdyrPerson/wikitest < storage_state_5.json`.
+  y compris celle du secret GitHub. Utiliser `wm_session_repair.py`, qui
+  reconnecte, vérifie l'identité et repousse le secret dans la foulée.
+- **La reconnexion ne peut pas tourner sur un runner.** Cloudflare Turnstile
+  refuse une IP de datacenter en Chrome headless — c'est pourquoi
+  `refresh-sessions.yml` a été supprimé le 03/09 (commit `423102a`). La même
+  connexion passe en local dans un vrai Chrome (vérifié le 04/09). Corollaire
+  utile : **les identifiants n'ont rien à faire dans les secrets GitHub**,
+  ils restent en local.
 - **Sur un 429, ralentir plutôt qu'insister** (pause de 60 s).
 - **Jamais deux comptes en parallèle**, et 5–10 s entre deux ouvertures.
 - **Le rythme n'est jamais parfaitement régulier** : jitter en tête de run,
