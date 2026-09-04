@@ -313,14 +313,40 @@ def annonces_actives(req_ctx):
     return out
 
 
-def emit_fragment(path, label, creees, actives):
+def historique(req_ctx):
+    """Annonces terminees du compte, separees en vendues / invendues.
+
+    C'est la seule facon de savoir ce que la strategie a REELLEMENT
+    rapporte : `selling` ne montre que ce qui est en cours, et une carte
+    vendue disparait simplement de la collection sans autre trace."""
+    r = req_ctx.get("/api/marketplace?page=1&limit=50&sort=ending_soon&mine=1")
+    if r.status >= 400:
+        return [], []
+    vendues, invendues = [], []
+    for a in r.json().get("history") or []:
+        card = a.get("card") or {}
+        entree = {
+            "titre": card.get("wikipedia_title", "?"),
+            "rarete": a.get("snapshot_rarity") or card.get("rarity", "?"),
+            "base": a.get("base_amount"),
+            "final": a.get("final_price"),
+            "statut": a.get("status"),
+            "regle": (a.get("settled_at") or "")[:16],
+        }
+        (vendues if a.get("final_price") else invendues).append(entree)
+    return vendues, invendues
+
+
+def emit_fragment(path, label, creees, actives, vendues=None, invendues=None):
     """Fragment JSON par compte, fusionne ensuite par --merge.
 
     Meme decoupage que wm_report_rares.py : chaque compte ecrit le sien
     juste apres son passage, plutot qu'un rapport global en fin de job qui
     obligerait a garder les cinq sessions ouvertes en parallele."""
     Path(path).write_text(
-        json.dumps({"compte": label, "creees": creees, "actives": actives}, ensure_ascii=False),
+        json.dumps({"compte": label, "creees": creees, "actives": actives,
+                    "vendues": vendues or [], "invendues": invendues or []},
+                   ensure_ascii=False),
         encoding="utf-8",
     )
 
@@ -473,7 +499,8 @@ def main():
         finally:
             if json_out:
                 try:
-                    emit_fragment(json_out, label, creees, annonces_actives(ctx))
+                    v, iv = historique(ctx)
+                    emit_fragment(json_out, label, creees, annonces_actives(ctx), v, iv)
                 except Exception as e:
                     print(f"  (fragment non ecrit : {e.__class__.__name__})")
             persist(ctx, state)
