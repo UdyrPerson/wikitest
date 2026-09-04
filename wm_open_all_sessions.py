@@ -37,12 +37,19 @@ import wm_open_booster as booster
 # sessions figees a la mi-journee : les utiliser rejouait un refresh token
 # deja consomme, ce qui REVOQUE la session vivante du compte. Ils ont ete
 # supprimes ; ne jamais reintroduire deux fichiers pour un meme compte.
+# 9230 est saute volontairement : c'est le port du compte premium
+# (wm_session_premium.py). Deux Chrome sur le meme port de debogage, ce
+# serait Playwright branche sur la mauvaise session.
 ACCOUNTS = [
     ("compte 1", 9224, Path("storage_state.json")),
     ("compte 2", 9225, Path("storage_state_2.json")),
     ("collecteur", 9226, Path("storage_state_3.json")),
     ("compte 4", 9227, Path("storage_state_4.json")),
     ("compte 5", 9228, Path("storage_state_5.json")),
+    ("compte 6", 9229, Path("storage_state_6.json")),
+    ("compte 7", 9231, Path("storage_state_7.json")),
+    ("compte 8", 9232, Path("storage_state_8.json")),
+    ("compte 9", 9233, Path("storage_state_9.json")),
 ]
 
 

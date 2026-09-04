@@ -9,9 +9,9 @@ GitHub Actions.
 
 Ce qu'il fait aujourd'hui :
 
-- ouvre les boosters de 5 comptes, en continu, sans machine allumée ;
+- ouvre les boosters de 9 comptes, en continu, sans machine allumée ;
 - défausse les cartes communes (C/PC/R/SR) pour les convertir en wikibidous ;
-- consolide les wikibidous des 4 comptes émetteurs vers un compte collecteur,
+- consolide les wikibidous des 8 comptes émetteurs vers un compte collecteur,
   via le système d'échange du jeu ;
 - lit le marché depuis le compte premium et en tire une table de référence
   des prix de vente réels (**terminée** : 1798 L et 12 245 UR) ;
@@ -36,9 +36,9 @@ maintenant sur le site (ouverture, défausse, échanges, mises en vente).
 Le projet vit sur deux plans qu'il ne faut pas confondre :
 
 **1. GitHub Actions — pure API, aucun navigateur.** C'est ce qui tourne en
-production, toutes les 50 min. Les sessions des 5 comptes de test vivent dans
-des secrets GitHub (`WM_TEST_STORAGE_STATE` … `WM_TEST5_STORAGE_STATE`), sont
-écrites en `state1.json` … `state5.json` au début du job, et **repoussées dans
+production, toutes les 50 min. Les sessions des 9 comptes de test vivent dans
+des secrets GitHub (`WM_TEST_STORAGE_STATE` … `WM_TEST9_STORAGE_STATE`), sont
+écrites en `state1.json` … `state9.json` au début du job, et **repoussées dans
 leur secret juste après le passage de leur compte** (voir « Le piège central »
 plus bas). Playwright n'est installé que pour son client HTTP :
 `pip install playwright`, sans `playwright install`.
@@ -51,7 +51,9 @@ lancé en **processus indépendant** (`CREATE_BREAKAWAY_FROM_JOB` +
 seulement pour piloter la page. Un Chrome lancé par `chromium.launch()` est tué
 dès que le script se termine — d'où le détour.
 
-Ports CDP : 9224–9228 pour les comptes de test, **9230 pour le premium**.
+Ports CDP : 9224–9229 puis 9231–9233 pour les comptes de test (un par
+compte, cf `wm_open_all_sessions.py`), **9230 pour le premium** — d'où le
+trou dans la série.
 
 ## Les comptes
 
@@ -220,10 +222,10 @@ les mettre en concurrence.
 
 | Fichier | Cadence | Ce qu'il fait |
 |---|---|---|
-| `boosters.yml` | 50 min, minutes 0/10/20/30/40 | Les 5 comptes en **séquentiel dans un seul job**, `--count 10` chacun (voir la limite quotidienne) |
-| `discard.yml` | 50 min, +5 min | Défausse `C,PC,R,SR` sur les 5 comptes |
+| `boosters.yml` | 50 min, minutes 0/10/20/30/40 | Les 9 comptes en **séquentiel dans un seul job**, `--count 10` chacun (voir la limite quotidienne) |
+| `discard.yml` | 50 min, +5 min | Défausse `C,PC,R,SR` sur les 9 comptes |
 | `trade.yml` | 50 min, +25 min | Les 4 émetteurs offrent leur solde, puis le collecteur accepte tout |
-| `sell.yml` | 3 h | Met en vente les meilleures L des 5 comptes. Entrée `dry_run` (vraie par défaut en manuel), `rarities` pour ajouter UR plus tard |
+| `sell.yml` | 3 h | Met en vente les meilleures L des 9 comptes. Entrée `dry_run` (vraie par défaut en manuel), `rarities` pour ajouter UR plus tard |
 | `report-rares.yml` | manuel | Lecture seule, rapport dans le résumé du run |
 
 Trois choses à savoir avant d'y toucher :
@@ -244,7 +246,7 @@ dans le temps.
 job et les comptes suivants n'étaient jamais traités.
 
 **Tous les workflows partagent le groupe de concurrence `wm-sessions`**, et
-c'est vital. Ils chargent les mêmes cinq secrets au démarrage et les
+c'est vital. Ils chargent les mêmes neuf secrets au démarrage et les
 repoussent après chaque compte : deux qui tournent en même temps repoussent
 des jetons issus de copies chargées à des instants différents, ce qui rejoue
 un refresh token déjà consommé et **révoque la session**.
@@ -287,6 +289,18 @@ Les conséquences pratiques, toutes déjà payées une fois :
 - **Un 403 n'est pas une session expirée.** Ne pas le traiter comme tel.
 - **Une fenêtre Chrome laissée ouverte périme le secret GitHub** du compte
   concerné.
+- **Une session révoquée revient avec `cookies: []`.** Quand le serveur
+  rejette le refresh token, `@supabase/ssr` ne se contente pas de répondre
+  401 : il **efface les cookies d'authentification** dans la réponse.
+  Vérifié le 04/09/2026 sur la session morte du compte 9 —
+  `GET /api/wikibidous` → 401 puis `cookies: []`. Deux conséquences :
+  `token_expires_in()` renvoie `None` (donc `ensure_fresh()` n'affiche
+  aucune ligne de renouvellement — c'est la signature à reconnaître dans un
+  log), et `persist()` écrivait un état vide que l'étape
+  `if: always()` poussait ensuite dans le secret. La session était déjà
+  perdue, mais on effaçait en prime la seule trace exploitable. `persist()`
+  **refuse désormais d'écraser un fichier qui portait des cookies d'auth par
+  un état qui n'en a plus**.
 
 ## Où j'en suis (03/09/2026)
 
@@ -301,7 +315,7 @@ Table de référence des prix (produite depuis le compte premium) :
   réelles. Médiane des médianes : **688,75 wb** ;
 - rareté **UR** : en cours, 12 257 cartes au catalogue.
 
-**La vente tourne en production sur les 5 comptes** (04/09/2026), 3
+**La vente tourne en production sur les 9 comptes** (04/09/2026), 3
 emplacements chacun, cycles de 6 h.
 
 Premier bilan réel, après un cycle :

@@ -125,6 +125,14 @@ def ensure_fresh(playwright, state_path, base_url):
     return playwright.request.new_context(storage_state=str(state_path), base_url=base_url)
 
 
+def _porte_des_cookies_auth(etat) -> bool:
+    """True si un etat de session contient encore les cookies Supabase."""
+    try:
+        return any("auth-token" in c.get("name", "") for c in etat.get("cookies", []))
+    except Exception:
+        return False
+
+
 def persist(req_ctx, state_path) -> bool:
     """Reecrit le fichier de session avec les cookies courants du contexte,
     pour conserver un eventuel refresh token tourne par le serveur.
@@ -132,10 +140,42 @@ def persist(req_ctx, state_path) -> bool:
     Ne leve jamais : la sauvegarde est un filet de securite, elle ne doit
     pas faire echouer l'action metier qui vient de reussir. Retourne True
     si l'ecriture a eu lieu.
+
+    GARDE-FOU AJOUTE LE 04/09/2026, apres la mort du compte 9. Quand le
+    serveur rejette le refresh token (famille revoquee), il ne se contente
+    pas de repondre 401 : @supabase/ssr EFFACE les cookies d'authentification
+    de la reponse. Le contexte revient donc avec cookies=[]. Verifie sur la
+    session morte du compte 9 :
+
+        GET /api/wikibidous -> 401 {"error":"Non autorise"}
+        cookies apres l'appel : []
+
+    Sans garde-fou, on ecrivait cet etat vide dans le fichier, et l'etape
+    « sauvegarde la session » (if: always()) le poussait tel quel dans le
+    secret GitHub -- qui ne se relit pas. La session etait deja perdue, mais
+    on effacait en prime la seule trace permettant de comprendre pourquoi.
+    On conserve donc le fichier existant plutot que de le vider.
     """
     try:
-        req_ctx.storage_state(path=str(Path(state_path)))
-        return True
+        etat = req_ctx.storage_state()
     except Exception as e:  # contexte deja ferme, disque en lecture seule...
+        print(f"    (sauvegarde de la session impossible : {e.__class__.__name__})")
+        return False
+
+    if not _porte_des_cookies_auth(etat):
+        ancien = Path(state_path)
+        try:
+            avait = _porte_des_cookies_auth(json.loads(ancien.read_text(encoding="utf-8")))
+        except Exception:
+            avait = False
+        if avait:
+            print("    (REFUS d'ecraser la session : le serveur a efface les cookies "
+                  "d'auth — jeton revoque, fichier et secret conserves)")
+            return False
+
+    try:
+        Path(state_path).write_text(json.dumps(etat), encoding="utf-8")
+        return True
+    except Exception as e:
         print(f"    (sauvegarde de la session impossible : {e.__class__.__name__})")
         return False
