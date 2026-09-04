@@ -81,14 +81,30 @@ jobs:
       - name: Jitter aleatoire (0-15s)
         run: python -c "import random, time; time.sleep(random.uniform(0, 15))"
 
-      # --count 30 : notre ancienne limite de 10 laissait des paquets non
-      # ouverts apres un trou de cron (constate le 31/08 : 13 paquets en
-      # attente, 3 abandonnes). Ne coute rien -- open_via_api() sort des que
-      # packs_remaining tombe a 0. continue-on-error : la panne d'un compte
-      # ne doit pas priver les suivants de leur ouverture.
+      # --count 10, ramene de 30 le 04/09/2026.
+      #
+      # Le raisonnement d'origine ("ne coute rien, la boucle sort des que
+      # packs_remaining tombe a 0") etait faux : la regeneration suit le
+      # rythme des ouvertures, packs_remaining reste a 9 pendant la rafale,
+      # donc la boucle ne s'arrete jamais et va jusqu'a 30. Ce n'est pas
+      # rattraper un trou de cron, c'est consommer le quota aussi vite que
+      # le serveur le reconstitue.
+      #
+      # Or le jeu impose une LIMITE QUOTIDIENNE d'ouverture (429 avec
+      # rate_limit_daily, retry_after a 12 h -- cf CLAUDE.md). Les comptes 2
+      # et 3 saturaient 30/30 a chaque run et se retrouvaient bloques douze
+      # heures, pendant lesquelles la regeneration bute sur le plafond de
+      # stock (~10) et se perd : environ 70 paquets par compte et par jour.
+      #
+      # 10 = un stock par passage. Le total quotidien ne baisse pas -- il
+      # est plafonne par le quota de toute facon -- on cesse simplement d'en
+      # jeter la moitie.
+      #
+      # continue-on-error : la panne d'un compte ne doit pas priver les
+      # suivants de leur ouverture.
       - name: Compte 1 -> ouvre tous ses boosters
         continue-on-error: true
-        run: python wm_open_booster.py --api --count 30 --state state1.json
+        run: python wm_open_booster.py --api --count 10 --state state1.json
 
       - name: Compte 1 -> sauvegarde la session
         if: always()
@@ -98,7 +114,7 @@ jobs:
 
       - name: Compte 2 -> ouvre tous ses boosters
         continue-on-error: true
-        run: python wm_open_booster.py --api --count 30 --state state2.json
+        run: python wm_open_booster.py --api --count 10 --state state2.json
 
       - name: Compte 2 -> sauvegarde la session
         if: always()
@@ -108,7 +124,7 @@ jobs:
 
       - name: Collecteur -> ouvre tous ses boosters
         continue-on-error: true
-        run: python wm_open_booster.py --api --count 30 --state state3.json
+        run: python wm_open_booster.py --api --count 10 --state state3.json
 
       - name: Collecteur -> sauvegarde la session
         if: always()
@@ -118,7 +134,7 @@ jobs:
 
       - name: Compte 4 -> ouvre tous ses boosters
         continue-on-error: true
-        run: python wm_open_booster.py --api --count 30 --state state4.json
+        run: python wm_open_booster.py --api --count 10 --state state4.json
 
       - name: Compte 4 -> sauvegarde la session
         if: always()
@@ -128,7 +144,7 @@ jobs:
 
       - name: Compte 5 -> ouvre tous ses boosters
         continue-on-error: true
-        run: python wm_open_booster.py --api --count 30 --state state5.json
+        run: python wm_open_booster.py --api --count 10 --state state5.json
 
       - name: Compte 5 -> sauvegarde la session
         if: always()

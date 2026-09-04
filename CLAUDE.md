@@ -211,7 +211,7 @@ les mettre en concurrence.
 
 | Fichier | Cadence | Ce qu'il fait |
 |---|---|---|
-| `boosters.yml` | 50 min, minutes 0/10/20/30/40 | Les 5 comptes en **séquentiel dans un seul job**, `--count 30` chacun |
+| `boosters.yml` | 50 min, minutes 0/10/20/30/40 | Les 5 comptes en **séquentiel dans un seul job**, `--count 10` chacun (voir la limite quotidienne) |
 | `discard.yml` | 50 min, +5 min | Défausse `C,PC,R,SR` sur les 5 comptes |
 | `trade.yml` | 50 min, +25 min | Les 4 émetteurs offrent leur solde, puis le collecteur accepte tout |
 | `sell.yml` | 3 h | Met en vente les meilleures L des 5 comptes. Entrée `dry_run` (vraie par défaut en manuel), `rarities` pour ajouter UR plus tard |
@@ -342,11 +342,11 @@ Trois points d'état de la machine :
 - **Résolu : les 429 des comptes 2 et 3 étaient la limite quotidienne.**
   Ils saturaient `--count 30` à chaque run (30 paquets toutes les 50 min)
   et ont épuisé leur quota du jour ; les comptes 1 et 4, qui vident leur
-  stock en 2 à 10 paquets, n'ont jamais été limités. Reste à décider si
-  `--count 30` doit baisser : le quota étant journalier, l'ouvrir en rafale
-  revient à le consommer en quelques heures puis à rester bloqué douze
-  heures, pendant lesquelles la régénération bute sur le plafond de stock
-  et se perd.
+  stock en 2 à 10 paquets, n'ont jamais été limités. **`--count` est passé
+  à 10** le 04/09 : le quota étant journalier, l'ouvrir en rafale revenait
+  à le consommer en quelques heures puis à rester bloqué douze heures,
+  pendant lesquelles la régénération bute sur le plafond de stock et se
+  perd — environ 70 paquets par compte et par jour.
 - **Le quota Actions n'est plus une contrainte : le dépôt est public**, donc
   les minutes sont gratuites et illimitées. L'arithmétique reste bonne à
   connaître si le dépôt redevenait privé — à 50 min de cadence, la défausse
