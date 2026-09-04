@@ -82,6 +82,16 @@ from urllib.parse import urlparse
 
 from playwright.sync_api import sync_playwright
 
+# La console Windows est en cp1252 : afficher un titre de carte contenant un
+# caractere hors de cette table leve un UnicodeEncodeError qui tue le script
+# en plein milieu. Invisible sur un runner GitHub (UTF-8), fatal en local.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
+
 from wm_session_io import ensure_fresh, persist
 
 
@@ -565,20 +575,37 @@ def open_via_api(req_ctx, count: int):
         # Un 429 ici veut dire que le serveur ne veut plus de nous
         # maintenant ; insister une demi-heure n'ouvre pas un paquet de
         # plus. On repassera au prochain cycle.
+        # 429 : le jeu impose une LIMITE QUOTIDIENNE d'ouverture, distincte
+        # du stock de paquets. Le corps le dit explicitement (releve le
+        # 04/09/2026) :
+        #
+        #   {"error":"Limite quotidienne de paquets atteinte...",
+        #    "rate_limited":true, "rate_limit_daily":true,
+        #    "retry_after":"2026-09-04T19:47:16Z", "packs_remaining":10}
+        #
+        # avec un en-tete retry-after de 44092 s, soit 12 h. Le compte a
+        # encore des paquets, il n'a plus le droit d'en ouvrir aujourd'hui.
+        # Ce n'est donc ni une sanction ni une detection de bot.
+        #
+        # Attendre n'a aucun sens a cette echelle : on s'arrete net et on
+        # affiche l'heure de reprise.
         if resp.status == 429:
+            try:
+                payload = resp.json()
+            except Exception:
+                payload = {}
+            if payload.get("rate_limited") or payload.get("rate_limit_daily"):
+                reprise = payload.get("retry_after") or resp.headers.get("retry-after", "?")
+                stock = payload.get("packs_remaining")
+                print(f"    limite quotidienne d'ouverture atteinte — reprise : {reprise}"
+                      + (f" (stock conserve : {stock} paquet(s))" if stock is not None else ""))
+                break
+            # 429 sans marqueur de quota : limitation ponctuelle, on
+            # patiente brievement puis on abandonne le compte.
             trop_vite += 1
-            # On affiche ce que dit le serveur : le corps et les en-tetes de
-            # limitation sont la seule facon de savoir QUELLE limite on
-            # touche (par minute ? par heure ? quota de paquets ?) et
-            # combien de temps elle dure. Sans ca, un 429 est muet et on en
-            # est reduit aux hypotheses.
-            entetes = {k: v for k, v in (resp.headers or {}).items()
-                       if "ratelimit" in k.lower() or k.lower() in ("retry-after", "x-request-id")}
-            print(f"    429 ({trop_vite}) corps : {resp.text()[:300]}")
-            if entetes:
-                print(f"    429 en-tetes : {entetes}")
+            print(f"    429 non quotidien ({trop_vite}/{MAX_429}) : {resp.text()[:200]}")
             if trop_vite > MAX_429:
-                print(f"    429 encore apres {MAX_429} pause(s) — on laisse ce compte au prochain cycle")
+                print("    toujours limite — on laisse ce compte au prochain cycle")
                 break
             time.sleep(60)
             continue

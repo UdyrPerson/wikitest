@@ -44,6 +44,16 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
+# La console Windows est en cp1252 : afficher un titre de carte contenant un
+# caractere hors de cette table leve un UnicodeEncodeError qui tue le script
+# en plein milieu. Invisible sur un runner GitHub (UTF-8), fatal en local.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
+
 from wm_session_io import ensure_fresh, persist
 
 BASE = "https://www.wiki-masters.com"

@@ -83,6 +83,16 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
+# La console Windows est en cp1252 : afficher un titre de carte contenant un
+# caractere hors de cette table leve un UnicodeEncodeError qui tue le script
+# en plein milieu. Invisible sur un runner GitHub (UTF-8), fatal en local.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
+
 from wm_session_io import ensure_fresh, persist
 
 BASE = "https://www.wiki-masters.com"
@@ -506,11 +516,13 @@ def main():
             print()
 
             tous = []
+            possedees = set()   # pour ecarter les fantomes du recapitulatif
             for rang, rarete in enumerate(raretes):
                 ref = charger_reference(rarete)
                 if not ref:
                     continue
                 rows = collection(ctx, rarete)
+                possedees |= {(r.get('card') or {}).get('id') for r in rows}
                 seuil = DISPERSION_MAX.get(rarete, DISPERSION_DEFAUT)
                 cands = candidats(rows, ref, exclues, derniers, rang, seuil)
                 n1 = sum(1 for c in cands if c["niveau"] == 1)
@@ -563,6 +575,16 @@ def main():
             if json_out:
                 try:
                     v, iv = historique(ctx)
+                    # Le recapitulatif annonçait "en attente de
+                    # repositionnement" des cartes qu'on ne possede plus :
+                    # l'historique du site garde l'annonce meme apres que
+                    # la carte a ete vendue ou defaussee. Constate le
+                    # 04/09/2026 avec des cartes C, hors du perimetre de
+                    # vente et depuis longtemps defaussees. On ne garde donc
+                    # que ce qui est encore en collection ET dans une rarete
+                    # que ce run traite -- le reste ne sera jamais repositionne.
+                    iv = [e for e in iv
+                          if e.get("card_id") in possedees and e.get("rarete") in raretes]
                     emit_fragment(json_out, label, creees, annonces_actives(ctx), v, iv)
                 except Exception as e:
                     print(f"  (fragment non ecrit : {e.__class__.__name__})")

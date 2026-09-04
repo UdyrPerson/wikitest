@@ -80,7 +80,7 @@ Endpoints connus et utilisés :
 
 | Route | Usage |
 |---|---|
-| `POST /api/packs/open` | Ouvre un booster, renvoie les 5 cartes **déjà révélées** + `packs_remaining` |
+| `POST /api/packs/open` | Ouvre un booster, renvoie les 5 cartes **déjà révélées** + `packs_remaining`. **429 = limite quotidienne**, voir plus bas |
 | `GET /api/my-collection?sort=rarity&rarity=X&page=N&stats=0` | Ma collection |
 | `POST /api/user-cards/bulk-discard` | Défausse par lots de 50 (`{"card_ids": [...]}`) |
 | `POST /api/user-cards/{user_card_id}/discard` | Défausse à l'unité (ancien chemin) |
@@ -108,6 +108,30 @@ Trois pièges :
 
 Et une nuance de nommage : la collection renvoie ses lignes sous la clé
 `collection`, alors que le catalogue les renvoie sous `cards`.
+
+**Il existe une limite QUOTIDIENNE d'ouverture de paquets, distincte du
+stock.** Elle se manifeste par un 429 sur `/api/packs/open` (relevé le
+04/09/2026) :
+
+```json
+{"error": "Limite quotidienne de paquets atteinte. Réessayez plus tard.",
+ "rate_limited": true, "rate_limit_daily": true,
+ "retry_after": "2026-09-04T19:47:16Z", "packs_remaining": 10}
+```
+
+avec un en-tête `retry-after` de 44 092 s, soit **12 h**. Trois choses à en
+retenir :
+
+- ce n'est **ni une sanction ni une détection de bot** : c'est une règle de
+  jeu ordinaire ;
+- le **stock est conservé** (`packs_remaining: 10`) — les paquets ne sont
+  pas perdus, seul le droit de les ouvrir est suspendu ;
+- attendre est inutile à cette échelle. On s'arrête net et on affiche
+  l'heure de reprise, plutôt que de boucler.
+
+Le stock, lui, semble plafonner autour de 9–10 : pendant une ouverture en
+rafale, `packs_remaining` reste à 9 sur les premiers paquets avant de
+décroître, la régénération compensant au fil de l'eau.
 
 **`mine=1` ne filtre pas.** Le paramètre laisse `auctions` sur le marché
 entier et **ajoute** à côté les tableaux `selling`, `bidding`, `history`,
@@ -315,12 +339,14 @@ Trois points d'état de la machine :
   `oursours` pour réparer. D'où `wm_session_io.identite()` et l'option
   `--expect` : **vérifier le pseudo avant d'écrire dans un secret**.
 - **Les workflows tournent normalement**, à la cadence de 50 min prévue.
-- **Point ouvert : les comptes 2 et 3 sont en 429 permanent sur
-  `/api/packs/open`** et n'ouvrent aucun paquet (0 sur tous les runs du
-  04/09, alors que 1, 4 et 5 ouvrent normalement). Hypothèse la plus
-  probable : la boucle de 30 réessais les martelait 30 fois par cycle, ce
-  qui entretenait la limitation. `MAX_429` divise ce martèlement par
-  quinze — à revérifier après quelques cycles pour voir s'ils repartent.
+- **Résolu : les 429 des comptes 2 et 3 étaient la limite quotidienne.**
+  Ils saturaient `--count 30` à chaque run (30 paquets toutes les 50 min)
+  et ont épuisé leur quota du jour ; les comptes 1 et 4, qui vident leur
+  stock en 2 à 10 paquets, n'ont jamais été limités. Reste à décider si
+  `--count 30` doit baisser : le quota étant journalier, l'ouvrir en rafale
+  revient à le consommer en quelques heures puis à rester bloqué douze
+  heures, pendant lesquelles la régénération bute sur le plafond de stock
+  et se perd.
 - **Le quota Actions n'est plus une contrainte : le dépôt est public**, donc
   les minutes sont gratuites et illimitées. L'arithmétique reste bonne à
   connaître si le dépôt redevenait privé — à 50 min de cadence, la défausse
