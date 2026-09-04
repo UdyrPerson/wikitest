@@ -135,6 +135,10 @@ CDP_PORT = 9224
 # d'affilee dans le meme run.
 API_DELAY = (5.0, 10.0)
 
+# Nombre de pauses de 60 s tolerees sur un 429 avant d'abandonner le
+# compte. Sans plafond, la boucle en faisait une par tentative restante.
+MAX_429 = 2
+
 # Chemin standard de Chrome sur Windows (meme hypothese que le docstring de
 # wm_session_cdp.py). Si ton install est ailleurs, ajuste cette constante.
 CHROME_EXE = Path(r"C:\Program Files\Google\Chrome\Application\chrome.exe")
@@ -522,6 +526,7 @@ def open_via_api(req_ctx, count: int):
     {"error":"Plus de paquets disponibles"} si le compteur etait deja a
     zero. Les deux sont des fins normales, pas des erreurs."""
     results = []
+    trop_vite = 0
     for i in range(1, count + 1):
         resp = req_ctx.post("/api/packs/open")
 
@@ -549,8 +554,23 @@ def open_via_api(req_ctx, count: int):
                 print(f"    plus de paquets disponibles{suffix}")
                 break
             raise SystemExit(f"403 sur /api/packs/open : {resp.text()[:300]}")
+        # 429 : on patiente, mais on ABANDONNE vite. Cette branche
+        # reessayait jusqu'a `count` fois, soit 30 pauses de 60 s : un
+        # compte limite coutait exactement 30 minutes, et le run entier
+        # montait a 60-93 min (constate le 04/09/2026, 60 messages 429 dans
+        # un seul run). Le workflow debordait alors largement sur la
+        # defausse et le trade, qui rechargent et repoussent les memes
+        # secrets -- d'ou des sessions revoquees au hasard.
+        #
+        # Un 429 ici veut dire que le serveur ne veut plus de nous
+        # maintenant ; insister une demi-heure n'ouvre pas un paquet de
+        # plus. On repassera au prochain cycle.
         if resp.status == 429:
-            print("    429 : on ralentit franchement (60s)")
+            trop_vite += 1
+            if trop_vite > MAX_429:
+                print(f"    429 encore apres {MAX_429} pause(s) — on laisse ce compte au prochain cycle")
+                break
+            print(f"    429 : pause de 60s ({trop_vite}/{MAX_429})")
             time.sleep(60)
             continue
         if resp.status >= 400:

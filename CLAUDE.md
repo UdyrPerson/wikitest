@@ -210,6 +210,20 @@ dans le temps.
 **`continue-on-error` sur chaque compte.** Sans ça, le premier 401 arrêtait le
 job et les comptes suivants n'étaient jamais traités.
 
+**Tous les workflows partagent le groupe de concurrence `wm-sessions`**, et
+c'est vital. Ils chargent les mêmes cinq secrets au démarrage et les
+repoussent après chaque compte : deux qui tournent en même temps repoussent
+des jetons issus de copies chargées à des instants différents, ce qui rejoue
+un refresh token déjà consommé et **révoque la session**.
+
+C'était la cause des morts de sessions apparemment aléatoires (trouvée le
+04/09/2026). Le déclencheur : un compte recevant un **429** sur
+`/api/packs/open` faisait boucler `open_via_api()` sur des pauses de 60 s,
+une par tentative restante — soit **30 minutes par compte limité**, et des
+runs de boosters de 60 à 93 min. La défausse (+5 min), le trade (+25 min) et
+la vente passaient tous pendant ce temps. `MAX_429` plafonne désormais ces
+pauses à deux.
+
 ## Le piège central : la rotation des jetons Supabase
 
 C'est la cause racine d'une série de « sessions expirées » incompréhensibles

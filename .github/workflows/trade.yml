@@ -35,8 +35,16 @@ on:
 permissions:
   contents: read
 
+# CONCURRENCE PARTAGEE ENTRE TOUS LES WORKFLOWS DE SESSION.
+# Les cinq workflows chargent les memes cinq secrets au demarrage et les
+# repoussent apres chaque compte. Avec un groupe par workflow, rien ne les
+# empechait de tourner en meme temps : chacun repoussait alors des jetons
+# issus d'une copie chargee avant l'autre, ce qui rejoue un refresh token
+# deja consomme et fait revoquer la session.
+# Constate le 04/09/2026 : un run de boosters de 93 min pendant lequel la
+# defausse, le trade et la vente sont tous passes.
 concurrency:
-  group: wm-trade
+  group: wm-sessions
   cancel-in-progress: false
 
 jobs:
