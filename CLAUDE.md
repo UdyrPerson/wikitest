@@ -252,8 +252,31 @@ Table de référence des prix (produite depuis le compte premium) :
   réelles. Médiane des médianes : **688,75 wb** ;
 - rareté **UR** : en cours, 12 257 cartes au catalogue.
 
-**La vente est testée en réel et fonctionne** (03/09/2026, compte 5, deux
-annonces créées) :
+**La vente tourne en production sur les 5 comptes** (04/09/2026), 3
+emplacements chacun, cycles de 6 h.
+
+Premier bilan réel, après un cycle :
+
+| | |
+|---|---|
+| Vendues | **4 cartes, 4779 wb** |
+| Dont au-dessus du prix demandé | 3 sur 4 (il y a donc de vraies enchères) |
+| `Lupita Nyong'o` | demandée 1210 (niveau 2, au maximum historique) → **vendue 1500** |
+
+Ce dernier cas valide l'enchère dégressive : partir du maximum sur une
+carte bimodale a rapporté plus que son propre record. Et le
+repositionnement fonctionne tout seul — `Chris Hemsworth` 5000 → 2500,
+`Empire ottoman` 5500 → 2750, sans état stocké localement.
+
+Table de référence **UR terminée** : 12 245 cartes avec ventes, médiane des
+médianes **80 wb** contre 688,75 pour les L, dispersion médiane 1,30 contre
+0,75. Seules 13 % des UR passent le filtre de fiabilité (45 % pour les L).
+C'est pourquoi **la rareté prime sur le niveau** dans le classement : sans
+ça, une UR fiable à 85 wb passerait devant une L non fiable à 2750 et
+stopperait sa descente.
+
+Historique : la vente a d'abord été testée à la main (03/09/2026, deux
+annonces) :
 
 - `duration_minutes: 360` est accepté — 6 h confirmées sur `end_at` ;
 - l'identifiant de possession est bien le bon : la carte mise en vente est
@@ -263,11 +286,18 @@ annonces créées) :
 
 Trois points d'état de la machine :
 
-- **Les sessions locales des comptes 2, 3 et 4 sont périmées** (jeton expiré
-  depuis ~4 jours). Les vraies vivent dans les secrets GitHub. Ne pas les
-  rejouer telles quelles — c'est le cas de révocation. Le compte 5 a été
-  reconnecté à la main le 03/09 ; **son secret GitHub doit être repoussé**
-  avant que les workflows le reprennent.
+- **Les sessions locales sont périmées** dès qu'un workflow est passé : les
+  vraies vivent dans les secrets GitHub. Ne jamais les rejouer telles
+  quelles — c'est le cas de révocation.
+- **Les cinq comptes sont bien distincts** : `ululuminadeL`, `ululuminadel1`,
+  `wikilover12` (collecteur), `tigrewiki`, `oursours`. Les deux premiers se
+  ressemblent mais ne sont pas le même compte.
+- **Incident du 04/09/2026 à ne pas reproduire** : une session de `tigrewiki`
+  a été poussée dans `WM_TEST5_STORAGE_STATE` en croyant tenir le compte 5.
+  La session d'`oursours` a été perdue (un secret ne se relit pas), les deux
+  comptes ont tourné sous la même identité, et il a fallu reconnecter
+  `oursours` pour réparer. D'où `wm_session_io.identite()` et l'option
+  `--expect` : **vérifier le pseudo avant d'écrire dans un secret**.
 - **Les workflows tournent normalement**, à la cadence de 50 min prévue.
 - **Le quota Actions n'est plus une contrainte : le dépôt est public**, donc
   les minutes sont gratuites et illimitées. L'arithmétique reste bonne à
@@ -280,7 +310,7 @@ Trois points d'état de la machine :
   fork exposerait `GH_ACTIONS_PAT` et les sessions. À ne pas oublier en
   ajoutant un futur workflow.
 
-Non commités : `wm_sales_reference.py`, `wm_scrape_launch.py`,
+Tout est commité et poussé sur `main`.
 `wm_session_premium.py`, `wm_sell.py`, `wm_sell_auto.py`,
 `wm_reference_build.py`, `wm_session_window.py`, `reference/L.json` et
 `.github/workflows/sell.yml`.
