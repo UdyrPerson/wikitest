@@ -39,7 +39,16 @@ STRATEGIE (definie le 03/09/2026)
    trois n'auront donc pas preneur au premier tour -- c'est attendu, et
    c'est ce que l'enchere degressive vient rattraper.
 
-4. Cartes dont la moyenne n'est PAS exploitable : elles ne sont pas
+4. La RARETE prime sur le niveau, dans l'ordre donne a --rarities. Sans
+   ca, brancher les UR casserait la strategie L : le niveau primant sur
+   tout, une UR fiable a 85 wb (esperance ~34) passerait devant une L non
+   fiable a 2750 wb (esperance ~82), et surtout elle stopperait la
+   descente de cette L, qui a besoin de cycler pour finir par se vendre.
+   Les UR valent environ neuf fois moins que les L (mediane des medianes
+   80 wb contre 688,75) : elles ne doivent occuper qu'un emplacement dont
+   aucune L ne veut.
+
+5. Cartes dont la moyenne n'est PAS exploitable : elles ne sont pas
    ecartees, elles sont releguees. Elles passent toujours apres les
    cartes fiables, quel que soit leur score, et ne servent qu'a occuper un
    emplacement dont aucune carte fiable ne veut -- un emplacement vide ne
@@ -56,7 +65,7 @@ STRATEGIE (definie le 03/09/2026)
    part d'un checkout propre. Il est relu depuis l'historique du compte
    (voir derniers_prix).
 
-5. Une seule annonce par carte distincte et par passage : deux exemplaires
+6. Une seule annonce par carte distincte et par passage : deux exemplaires
    de la meme carte mis en vente ensemble se concurrencent et tirent le
    prix vers le bas.
 
@@ -215,7 +224,7 @@ def prix_degressif(fiche, dernier_demande):
     return max(int(dernier_demande) // 2, PRIX_PLANCHER)
 
 
-def candidats(rows, ref, exclues, derniers=None):
+def candidats(rows, ref, exclues, derniers=None, rang_rarete=0):
     """Possessions vendables, en deux niveaux de priorite.
 
     Niveau 1 -- la moyenne est exploitable : prix = moyenne x MARGE,
@@ -257,6 +266,7 @@ def candidats(rows, ref, exclues, derniers=None):
             "n": fiche["n"],
             "moyenne": fiche["moy"],
             "dispersion": dispersion,
+            "rang_rarete": rang_rarete,
             "niveau": 1 if fiable else 2,
             "demande": demande,
             "p_vente": proba_vente(fiche["prix"], demande),
@@ -265,10 +275,7 @@ def candidats(rows, ref, exclues, derniers=None):
     for c in out:
         c["score"] = c["demande"] * c["p_vente"]
 
-    # Le niveau prime sur le score : une carte non fiable ne passe jamais
-    # devant une carte fiable, meme si son esperance calculee est plus
-    # elevee.
-    out.sort(key=lambda c: (c["niveau"], -c["score"]))
+    out.sort(key=lambda c: (c["rang_rarete"], c["niveau"], -c["score"]))
     return out
 
 
@@ -411,12 +418,12 @@ def main():
             print()
 
             tous = []
-            for rarete in raretes:
+            for rang, rarete in enumerate(raretes):
                 ref = charger_reference(rarete)
                 if not ref:
                     continue
                 rows = collection(ctx, rarete)
-                cands = candidats(rows, ref, exclues, derniers)
+                cands = candidats(rows, ref, exclues, derniers, rang)
                 n1 = sum(1 for c in cands if c["niveau"] == 1)
                 print(f"## {rarete} — {len(rows)} possession(s), "
                       f"{n1} fiable(s) + {len(cands) - n1} en enchere degressive")
@@ -426,7 +433,7 @@ def main():
                 print("\nAucune carte ne passe les criteres.")
                 return
 
-            tous.sort(key=lambda c: (c["niveau"], -c["score"]))
+            tous.sort(key=lambda c: (c["rang_rarete"], c["niveau"], -c["score"]))
             print(f"\n{'':2s} {'niv':>3s} {'carte':38s} {'n':>4s} {'moy':>8s} {'disp':>6s} "
                   f"{'demande':>8s} {'p':>5s} {'score':>8s}")
             for i, c in enumerate(tous[:12], 1):
