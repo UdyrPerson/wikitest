@@ -144,6 +144,34 @@ PRIX_PLANCHER = 10
 # plancher.
 FACTEUR_DESCENTE = 1.5
 
+# Duree raccourcie des le SECOND passage d'une carte en descente : une
+# carte qui n'est pas partie au prix fort n'a pas besoin d'immobiliser un
+# emplacement six heures de plus pour le verifier a un prix plus bas.
+#
+# A noter : ca ne repousse PAS la limite des 50 annonces d'historique, qui
+# se compte en nombre d'annonces et non en temps -- des encheres deux fois
+# plus courtes remplissent la fenetre deux fois plus vite. Une carte pourra
+# toujours enchainer une dizaine de descentes avant d'etre oubliee. Le gain
+# est ailleurs : on liquide deux fois plus vite en temps reel.
+DUREE_DESCENTE = 180  # 3 h
+
+# En dessous de ce prix, on renonce a vendre la carte : elle n'est pas
+# listee du tout. Un emplacement occupe par une carte a 150 wb est un
+# emplacement que ne prend pas une carte a 4 000. Mesure sur les tables :
+# aucune L n'a un maximum sous 200, et 25% des UR sont ecartees d'emblee --
+# ce sont precisement celles qui ne valent pas un emplacement.
+PRIX_ABANDON = 200
+
+# Plancher PROPORTIONNEL a la valeur de la carte, en plus du seuil absolu.
+#
+# Sans lui, une carte chere re-obtenue apres avoir ete vendue repartirait
+# du dernier prix bas lu dans l'historique : celui-ci conserve les passages
+# invendus meme apres que la carte a change de mains. Constate sur le
+# compte premium -- "Marie Curie" a des invendues a 3456 et une vente a
+# 1724. On ne descend donc jamais sous une fraction de la mediane propre a
+# la carte, quelle que soit la memoire.
+FRACTION_PLANCHER = 0.5
+
 
 def charger_reference(rarity: str):
     path = REF / f"{rarity}.json"
@@ -251,9 +279,28 @@ def prix_degressif(fiche, dernier_demande):
     L'etat n'est pas stocke localement : un runner GitHub part d'un
     checkout propre. On repart du dernier prix demande, relu sur le site.
     """
+    plancher = plancher_carte(fiche)
+    # Carte dont le meilleur prix jamais atteint est deja sous le plancher :
+    # la lister reviendrait a demander plus que ce qu'elle a jamais valu.
+    # On y renonce -- c'est le cas de 25% des UR.
+    if int(fiche["max"]) < plancher:
+        return None
     if dernier_demande is None:
-        return max(int(fiche["max"]), PRIX_PLANCHER)
-    return max(int(dernier_demande / FACTEUR_DESCENTE), PRIX_PLANCHER)
+        return int(fiche["max"])
+    prix = int(dernier_demande / FACTEUR_DESCENTE)
+    if prix < plancher:
+        return None  # descente terminee : on renonce plutot que de brader
+    return prix
+
+
+def plancher_carte(fiche):
+    """Prix sous lequel on cesse de faire descendre une carte.
+
+    Deux garde-fous cumules : un seuil absolu (PRIX_ABANDON), parce qu'un
+    emplacement vaut mieux qu'une vente a 150 wb, et un seuil relatif a la
+    valeur de la carte (FRACTION_PLANCHER), pour qu'une carte chere ne
+    soit jamais bradee a cause d'echecs anterieurs."""
+    return max(PRIX_ABANDON, int((fiche.get("med") or 0) * FRACTION_PLANCHER))
 
 
 def candidats(rows, ref, exclues, derniers=None, rang_rarete=0, dispersion_max=DISPERSION_DEFAUT):
@@ -284,9 +331,14 @@ def candidats(rows, ref, exclues, derniers=None, rang_rarete=0, dispersion_max=D
 
         if fiable:
             demande = int(round(fiche["moy"] * MARGE))
+            duree_carte = None          # duree par defaut du run
         else:
-            demande = prix_degressif(fiche, derniers.get(cid))
-        if demande <= 0:
+            deja_vue = derniers.get(cid)
+            demande = prix_degressif(fiche, deja_vue)
+            # Des le second passage, on raccourcit : inutile d'immobiliser
+            # six heures pour reverifier un prix plus bas.
+            duree_carte = DUREE_DESCENTE if deja_vue is not None else None
+        if not demande or demande <= 0:
             continue
 
         vus.add(cid)
@@ -301,6 +353,7 @@ def candidats(rows, ref, exclues, derniers=None, rang_rarete=0, dispersion_max=D
             "rang_rarete": rang_rarete,
             "niveau": 1 if fiable else 2,
             "demande": demande,
+            "duree": duree_carte,       # None = duree par defaut du run
             "p_vente": proba_vente(fiche["prix"], demande),
         })
 
@@ -555,18 +608,19 @@ def main():
 
             print()
             for c in retenues:
-                aid = vendre(ctx, c["possession"], c["demande"], duree)
+                duree_c = c.get("duree") or duree
+                aid = vendre(ctx, c["possession"], c["demande"], duree_c)
                 if aid:
                     print(f"  en vente — {c['titre'][:40]} a {c['demande']} wb "
-                          f"(p~{c['p_vente']:.0%}) — enchere {aid}")
+                          f"(p~{c['p_vente']:.0%}, {duree_lisible(duree_c)}) — enchere {aid}")
                     creees.append({
                         "auction_id": aid,
                         "titre": c["titre"],
                         "rarete": c["rarete"],
                         "prix": c["demande"],
                         "niveau": c["niveau"],
-                        "duree_min": duree,
-                        "duree_lisible": duree_lisible(duree),
+                        "duree_min": duree_c,
+                        "duree_lisible": duree_lisible(duree_c),
                     })
                 else:
                     print(f"  ECHEC — {c['titre'][:40]}")
