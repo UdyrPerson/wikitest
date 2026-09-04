@@ -60,19 +60,27 @@ jobs:
       - name: Installe Playwright (client API seulement, pas de navigateur)
         run: pip install playwright
 
-      - name: Ecrit les 5 sessions depuis les secrets
+      - name: Ecrit les neuf sessions depuis les secrets
         env:
           WM_TEST_STORAGE_STATE: ${{ secrets.WM_TEST_STORAGE_STATE }}
           WM_TEST2_STORAGE_STATE: ${{ secrets.WM_TEST2_STORAGE_STATE }}
           WM_TEST3_STORAGE_STATE: ${{ secrets.WM_TEST3_STORAGE_STATE }}
           WM_TEST4_STORAGE_STATE: ${{ secrets.WM_TEST4_STORAGE_STATE }}
           WM_TEST5_STORAGE_STATE: ${{ secrets.WM_TEST5_STORAGE_STATE }}
+          WM_TEST6_STORAGE_STATE: ${{ secrets.WM_TEST6_STORAGE_STATE }}
+          WM_TEST7_STORAGE_STATE: ${{ secrets.WM_TEST7_STORAGE_STATE }}
+          WM_TEST8_STORAGE_STATE: ${{ secrets.WM_TEST8_STORAGE_STATE }}
+          WM_TEST9_STORAGE_STATE: ${{ secrets.WM_TEST9_STORAGE_STATE }}
         run: |
           python -c "import os, pathlib; pathlib.Path('state1.json').write_text(os.environ['WM_TEST_STORAGE_STATE'])"
           python -c "import os, pathlib; pathlib.Path('state2.json').write_text(os.environ['WM_TEST2_STORAGE_STATE'])"
           python -c "import os, pathlib; pathlib.Path('state3.json').write_text(os.environ['WM_TEST3_STORAGE_STATE'])"
           python -c "import os, pathlib; pathlib.Path('state4.json').write_text(os.environ['WM_TEST4_STORAGE_STATE'])"
           python -c "import os, pathlib; pathlib.Path('state5.json').write_text(os.environ['WM_TEST5_STORAGE_STATE'])"
+          python -c "import os, pathlib; pathlib.Path('state6.json').write_text(os.environ['WM_TEST6_STORAGE_STATE'])"
+          python -c "import os, pathlib; pathlib.Path('state7.json').write_text(os.environ['WM_TEST7_STORAGE_STATE'])"
+          python -c "import os, pathlib; pathlib.Path('state8.json').write_text(os.environ['WM_TEST8_STORAGE_STATE'])"
+          python -c "import os, pathlib; pathlib.Path('state9.json').write_text(os.environ['WM_TEST9_STORAGE_STATE'])"
 
       - name: Jitter aleatoire (0-15s)
         run: python -c "import random, time; time.sleep(random.uniform(0, 15))"
@@ -144,6 +152,58 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
         run: gh secret set WM_TEST5_STORAGE_STATE --repo ${{ github.repository }} < state5.json
 
+      - name: Compte 6 -> offre tout son solde au collecteur
+        continue-on-error: true
+        id: c4
+        env:
+          WM_TRADE_RECIPIENT: ${{ secrets.WM_TRADE_RECIPIENT }}
+        run: python wm_trade_gift_wb.py state6.json "$WM_TRADE_RECIPIENT"
+
+      - name: Compte 6 -> sauvegarde la session
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh secret set WM_TEST6_STORAGE_STATE --repo ${{ github.repository }} < state6.json
+
+      - name: Compte 7 -> offre tout son solde au collecteur
+        continue-on-error: true
+        id: c5
+        env:
+          WM_TRADE_RECIPIENT: ${{ secrets.WM_TRADE_RECIPIENT }}
+        run: python wm_trade_gift_wb.py state7.json "$WM_TRADE_RECIPIENT"
+
+      - name: Compte 7 -> sauvegarde la session
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh secret set WM_TEST7_STORAGE_STATE --repo ${{ github.repository }} < state7.json
+
+      - name: Compte 8 -> offre tout son solde au collecteur
+        continue-on-error: true
+        id: c6
+        env:
+          WM_TRADE_RECIPIENT: ${{ secrets.WM_TRADE_RECIPIENT }}
+        run: python wm_trade_gift_wb.py state8.json "$WM_TRADE_RECIPIENT"
+
+      - name: Compte 8 -> sauvegarde la session
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh secret set WM_TEST8_STORAGE_STATE --repo ${{ github.repository }} < state8.json
+
+      - name: Compte 9 -> offre tout son solde au collecteur
+        continue-on-error: true
+        id: c7
+        env:
+          WM_TRADE_RECIPIENT: ${{ secrets.WM_TRADE_RECIPIENT }}
+        run: python wm_trade_gift_wb.py state9.json "$WM_TRADE_RECIPIENT"
+
+      - name: Compte 9 -> sauvegarde la session
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh secret set WM_TEST9_STORAGE_STATE --repo ${{ github.repository }} < state9.json
+
       - name: Collecteur -> accepte toutes les offres en attente
         run: python wm_trade_accept_all.py state3.json
 
@@ -166,6 +226,10 @@ jobs:
           [ "${{ steps.c1.outcome }}" = "success" ] || echecs="$echecs compte2"
           [ "${{ steps.c2.outcome }}" = "success" ] || echecs="$echecs compte4"
           [ "${{ steps.c3.outcome }}" = "success" ] || echecs="$echecs compte5"
+          [ "${{ steps.c4.outcome }}" = "success" ] || echecs="$echecs compte6"
+          [ "${{ steps.c5.outcome }}" = "success" ] || echecs="$echecs compte7"
+          [ "${{ steps.c6.outcome }}" = "success" ] || echecs="$echecs compte8"
+          [ "${{ steps.c7.outcome }}" = "success" ] || echecs="$echecs compte9"
           if [ -n "$echecs" ]; then
             {
               echo "## Comptes en echec :$echecs"

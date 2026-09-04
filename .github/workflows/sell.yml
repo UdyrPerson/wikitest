@@ -1,4 +1,4 @@
-name: Mise en vente L (5 comptes)
+name: Mise en vente L (9 comptes)
 
 # Met aux encheres les meilleures cartes L de chaque compte, selon la table
 # de reference des prix reels (reference/L.json) et la strategie decrite
@@ -102,19 +102,27 @@ jobs:
             exit 1
           }
 
-      - name: Ecrit les sessions des cinq comptes depuis les secrets
+      - name: Ecrit les sessions des neuf comptes depuis les secrets
         env:
           WM_TEST_STORAGE_STATE: ${{ secrets.WM_TEST_STORAGE_STATE }}
           WM_TEST2_STORAGE_STATE: ${{ secrets.WM_TEST2_STORAGE_STATE }}
           WM_TEST3_STORAGE_STATE: ${{ secrets.WM_TEST3_STORAGE_STATE }}
           WM_TEST4_STORAGE_STATE: ${{ secrets.WM_TEST4_STORAGE_STATE }}
           WM_TEST5_STORAGE_STATE: ${{ secrets.WM_TEST5_STORAGE_STATE }}
+          WM_TEST6_STORAGE_STATE: ${{ secrets.WM_TEST6_STORAGE_STATE }}
+          WM_TEST7_STORAGE_STATE: ${{ secrets.WM_TEST7_STORAGE_STATE }}
+          WM_TEST8_STORAGE_STATE: ${{ secrets.WM_TEST8_STORAGE_STATE }}
+          WM_TEST9_STORAGE_STATE: ${{ secrets.WM_TEST9_STORAGE_STATE }}
         run: |
           python -c "import os, pathlib; pathlib.Path('state1.json').write_text(os.environ['WM_TEST_STORAGE_STATE'])"
           python -c "import os, pathlib; pathlib.Path('state2.json').write_text(os.environ['WM_TEST2_STORAGE_STATE'])"
           python -c "import os, pathlib; pathlib.Path('state3.json').write_text(os.environ['WM_TEST3_STORAGE_STATE'])"
           python -c "import os, pathlib; pathlib.Path('state4.json').write_text(os.environ['WM_TEST4_STORAGE_STATE'])"
           python -c "import os, pathlib; pathlib.Path('state5.json').write_text(os.environ['WM_TEST5_STORAGE_STATE'])"
+          python -c "import os, pathlib; pathlib.Path('state6.json').write_text(os.environ['WM_TEST6_STORAGE_STATE'])"
+          python -c "import os, pathlib; pathlib.Path('state7.json').write_text(os.environ['WM_TEST7_STORAGE_STATE'])"
+          python -c "import os, pathlib; pathlib.Path('state8.json').write_text(os.environ['WM_TEST8_STORAGE_STATE'])"
+          python -c "import os, pathlib; pathlib.Path('state9.json').write_text(os.environ['WM_TEST9_STORAGE_STATE'])"
 
       # Simulation uniquement si le run est manuel ET la case cochee ; un
       # run planifie vend toujours.
@@ -188,6 +196,46 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
         run: gh secret set WM_TEST5_STORAGE_STATE --repo ${{ github.repository }} < state5.json
+
+      - name: Compte 6 -> mise en vente
+        continue-on-error: true
+        run: python wm_sell_auto.py state6.json --rarities "$RARITIES" --duration "$DUREE" --json-out frag6.json --label compte6 $GO
+
+      - name: Compte 6 -> sauvegarde la session
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh secret set WM_TEST6_STORAGE_STATE --repo ${{ github.repository }} < state6.json
+
+      - name: Compte 7 -> mise en vente
+        continue-on-error: true
+        run: python wm_sell_auto.py state7.json --rarities "$RARITIES" --duration "$DUREE" --json-out frag7.json --label compte7 $GO
+
+      - name: Compte 7 -> sauvegarde la session
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh secret set WM_TEST7_STORAGE_STATE --repo ${{ github.repository }} < state7.json
+
+      - name: Compte 8 -> mise en vente
+        continue-on-error: true
+        run: python wm_sell_auto.py state8.json --rarities "$RARITIES" --duration "$DUREE" --json-out frag8.json --label compte8 $GO
+
+      - name: Compte 8 -> sauvegarde la session
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh secret set WM_TEST8_STORAGE_STATE --repo ${{ github.repository }} < state8.json
+
+      - name: Compte 9 -> mise en vente
+        continue-on-error: true
+        run: python wm_sell_auto.py state9.json --rarities "$RARITIES" --duration "$DUREE" --json-out frag9.json --label compte9 $GO
+
+      - name: Compte 9 -> sauvegarde la session
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh secret set WM_TEST9_STORAGE_STATE --repo ${{ github.repository }} < state9.json
 
       # Recapitulatif final, sur le modele de report-rares.yml : chaque
       # compte a depose son fragment juste apres son passage, on les

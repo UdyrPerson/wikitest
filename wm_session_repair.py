@@ -63,6 +63,10 @@ COMPTES = {
     "collecteur": ("storage_state_3.json", "WM_TEST3_STORAGE_STATE", "wikilover12"),
     "compte4":    ("storage_state_4.json", "WM_TEST4_STORAGE_STATE", "tigrewiki"),
     "compte5":    ("storage_state_5.json", "WM_TEST5_STORAGE_STATE", "oursours"),
+    "compte6":    ("storage_state_6.json", "WM_TEST6_STORAGE_STATE", "josin33471"),
+    "compte7":    ("storage_state_7.json", "WM_TEST7_STORAGE_STATE", "lokox26692"),
+    "compte8":    ("storage_state_8.json", "WM_TEST8_STORAGE_STATE", "haxiwas190"),
+    "compte9":    ("storage_state_9.json", "WM_TEST9_STORAGE_STATE", "yigoce9300"),
 }
 
 

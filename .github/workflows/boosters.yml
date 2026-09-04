@@ -1,4 +1,4 @@
-name: Ouverture boosters (5 comptes, sequentiel)
+name: Ouverture boosters (9 comptes, sequentiel)
 
 # Remplace les cinq workflows auto-booster*.yml et l'orchestrateur
 # open-all-boosters.yml, fusionnes le 03/09/2026.
@@ -64,19 +64,27 @@ jobs:
       - name: Installe Playwright (client API seulement, pas de navigateur)
         run: pip install playwright
 
-      - name: Ecrit les sessions des cinq comptes depuis les secrets
+      - name: Ecrit les sessions des neuf comptes depuis les secrets
         env:
           WM_TEST_STORAGE_STATE: ${{ secrets.WM_TEST_STORAGE_STATE }}
           WM_TEST2_STORAGE_STATE: ${{ secrets.WM_TEST2_STORAGE_STATE }}
           WM_TEST3_STORAGE_STATE: ${{ secrets.WM_TEST3_STORAGE_STATE }}
           WM_TEST4_STORAGE_STATE: ${{ secrets.WM_TEST4_STORAGE_STATE }}
           WM_TEST5_STORAGE_STATE: ${{ secrets.WM_TEST5_STORAGE_STATE }}
+          WM_TEST6_STORAGE_STATE: ${{ secrets.WM_TEST6_STORAGE_STATE }}
+          WM_TEST7_STORAGE_STATE: ${{ secrets.WM_TEST7_STORAGE_STATE }}
+          WM_TEST8_STORAGE_STATE: ${{ secrets.WM_TEST8_STORAGE_STATE }}
+          WM_TEST9_STORAGE_STATE: ${{ secrets.WM_TEST9_STORAGE_STATE }}
         run: |
           python -c "import os, pathlib; pathlib.Path('state1.json').write_text(os.environ['WM_TEST_STORAGE_STATE'])"
           python -c "import os, pathlib; pathlib.Path('state2.json').write_text(os.environ['WM_TEST2_STORAGE_STATE'])"
           python -c "import os, pathlib; pathlib.Path('state3.json').write_text(os.environ['WM_TEST3_STORAGE_STATE'])"
           python -c "import os, pathlib; pathlib.Path('state4.json').write_text(os.environ['WM_TEST4_STORAGE_STATE'])"
           python -c "import os, pathlib; pathlib.Path('state5.json').write_text(os.environ['WM_TEST5_STORAGE_STATE'])"
+          python -c "import os, pathlib; pathlib.Path('state6.json').write_text(os.environ['WM_TEST6_STORAGE_STATE'])"
+          python -c "import os, pathlib; pathlib.Path('state7.json').write_text(os.environ['WM_TEST7_STORAGE_STATE'])"
+          python -c "import os, pathlib; pathlib.Path('state8.json').write_text(os.environ['WM_TEST8_STORAGE_STATE'])"
+          python -c "import os, pathlib; pathlib.Path('state9.json').write_text(os.environ['WM_TEST9_STORAGE_STATE'])"
 
       - name: Jitter aleatoire (0-15s)
         run: python -c "import random, time; time.sleep(random.uniform(0, 15))"
@@ -157,6 +165,50 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
         run: gh secret set WM_TEST5_STORAGE_STATE --repo ${{ github.repository }} < state5.json
 
+      - name: Compte 6 -> ouvre tous ses boosters
+        continue-on-error: true
+        id: c5
+        run: python wm_open_booster.py --api --count 10 --state state6.json
+
+      - name: Compte 6 -> sauvegarde la session
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh secret set WM_TEST6_STORAGE_STATE --repo ${{ github.repository }} < state6.json
+
+      - name: Compte 7 -> ouvre tous ses boosters
+        continue-on-error: true
+        id: c6
+        run: python wm_open_booster.py --api --count 10 --state state7.json
+
+      - name: Compte 7 -> sauvegarde la session
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh secret set WM_TEST7_STORAGE_STATE --repo ${{ github.repository }} < state7.json
+
+      - name: Compte 8 -> ouvre tous ses boosters
+        continue-on-error: true
+        id: c7
+        run: python wm_open_booster.py --api --count 10 --state state8.json
+
+      - name: Compte 8 -> sauvegarde la session
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh secret set WM_TEST8_STORAGE_STATE --repo ${{ github.repository }} < state8.json
+
+      - name: Compte 9 -> ouvre tous ses boosters
+        continue-on-error: true
+        id: c8
+        run: python wm_open_booster.py --api --count 10 --state state9.json
+
+      - name: Compte 9 -> sauvegarde la session
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh secret set WM_TEST9_STORAGE_STATE --repo ${{ github.repository }} < state9.json
+
       # Rend les comptes en echec VISIBLES. Avec continue-on-error, un
       # compte dont la session est morte laisse le job en "success" : le
       # compte 2 est reste en 401 sans que personne le remarque, le
@@ -171,6 +223,10 @@ jobs:
           [ "${{ steps.c2.outcome }}" = "success" ] || echecs="$echecs collecteur"
           [ "${{ steps.c3.outcome }}" = "success" ] || echecs="$echecs compte4"
           [ "${{ steps.c4.outcome }}" = "success" ] || echecs="$echecs compte5"
+          [ "${{ steps.c5.outcome }}" = "success" ] || echecs="$echecs compte6"
+          [ "${{ steps.c6.outcome }}" = "success" ] || echecs="$echecs compte7"
+          [ "${{ steps.c7.outcome }}" = "success" ] || echecs="$echecs compte8"
+          [ "${{ steps.c8.outcome }}" = "success" ] || echecs="$echecs compte9"
           if [ -n "$echecs" ]; then
             {
               echo "## Comptes en echec :$echecs"

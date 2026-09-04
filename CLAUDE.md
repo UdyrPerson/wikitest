@@ -57,13 +57,19 @@ Ports CDP : 9224–9228 pour les comptes de test, **9230 pour le premium**.
 
 | | Rôle |
 |---|---|
-| Comptes 1, 2, 4, 5 | Émetteurs : ouvrent des boosters, défaussent, offrent leur solde |
+| Comptes 1, 2, 4, 5, 6, 7, 8, 9 | Émetteurs : ouvrent des boosters, défaussent, offrent leur solde |
 | Compte 3 | **Collecteur** : ouvre et défausse aussi, mais reçoit les échanges au lieu d'en envoyer |
 | Compte premium | Compte principal, séparé de l'automatisation. Seul à voir l'historique des ventes conclues. Session dans `storage_state_premium.json` |
 
 Le pseudo du collecteur est dans le secret `WM_TRADE_RECIPIENT`, pas en dur
 dans le code. Le collecteur doit être « ami » avec chaque émetteur pour que
 l'échange passe.
+
+Les quatre derniers comptes ont été ajoutés le 04/09/2026. Aucun endpoint de
+**recherche d'utilisateur** n'existe : `POST /api/friends` exige l'UUID du
+destinataire, qu'on lit hors ligne dans le jeton de sa session
+(`user.id`). `/api/friends/requests` renvoie 405 sur GET comme sur POST —
+c'est la route dynamique `/api/friends/{id}` qui capte le mot « requests ».
 
 **`storage_state.json` porte le compte de test 1**, pas le compte principal.
 L'écraser casse l'automatisation — c'est pour ça que le premium a son propre
@@ -90,7 +96,9 @@ Endpoints connus et utilisés :
 | `GET /api/marketplace/mine` | `{"sellingCount": N, "maxConcurrentAuctions": M}` — **le plafond dépend du compte** : 5 sur un compte de test, 10 sur le premium |
 | `GET /api/marketplace/{auction_id}` | L'enchère complète : carte, mises, `end_at`, `status`, `final_price`, `base_repriced_at` |
 | `GET /api/marketplace/cards/{card_id}/sales` | **Ventes conclues** (`final_price`, `settled_at`) — **premium seulement** |
-| `GET /api/friends` | Résout un pseudo en `recipient_id` |
+| `GET /api/friends` | `{"friendships": [...], "counts": {...}}` — résout aussi un pseudo en `recipient_id` |
+| `POST /api/friends` | **Demande d'amitié.** `{"addressee_id": <uuid>}` → 201. Attend l'UUID, **pas** le pseudo (`{"error":"addressee_id requis"}` sinon) |
+| `PATCH /api/friends/{friendship_id}` | `{"action":"accept"}` → 200 `{"status":"accepted"}` |
 | `GET /api/wikibidous` | Solde courant |
 | `GET /api/trades`, `POST /api/trades`, `PATCH /api/trades/{id}` | Échanges (`{"action":"accept"}`) |
 

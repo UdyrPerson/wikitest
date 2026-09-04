@@ -1,4 +1,4 @@
-name: Rapport cartes UR/L (5 comptes)
+name: Rapport cartes UR/L (9 comptes)
 
 # Workflow purement informationnel : ne fait que des GET, n'ouvre rien, ne
 # defausse rien, n'echange rien. Agrege les cartes UR et L des cinq comptes
@@ -60,19 +60,27 @@ jobs:
       - name: Installe Playwright (client API seulement, pas de navigateur)
         run: pip install playwright
 
-      - name: Ecrit les sessions des cinq comptes depuis les secrets
+      - name: Ecrit les sessions des neuf comptes depuis les secrets
         env:
           WM_TEST_STORAGE_STATE: ${{ secrets.WM_TEST_STORAGE_STATE }}
           WM_TEST2_STORAGE_STATE: ${{ secrets.WM_TEST2_STORAGE_STATE }}
           WM_TEST3_STORAGE_STATE: ${{ secrets.WM_TEST3_STORAGE_STATE }}
           WM_TEST4_STORAGE_STATE: ${{ secrets.WM_TEST4_STORAGE_STATE }}
           WM_TEST5_STORAGE_STATE: ${{ secrets.WM_TEST5_STORAGE_STATE }}
+          WM_TEST6_STORAGE_STATE: ${{ secrets.WM_TEST6_STORAGE_STATE }}
+          WM_TEST7_STORAGE_STATE: ${{ secrets.WM_TEST7_STORAGE_STATE }}
+          WM_TEST8_STORAGE_STATE: ${{ secrets.WM_TEST8_STORAGE_STATE }}
+          WM_TEST9_STORAGE_STATE: ${{ secrets.WM_TEST9_STORAGE_STATE }}
         run: |
           python -c "import os, pathlib; pathlib.Path('state1.json').write_text(os.environ['WM_TEST_STORAGE_STATE'])"
           python -c "import os, pathlib; pathlib.Path('state2.json').write_text(os.environ['WM_TEST2_STORAGE_STATE'])"
           python -c "import os, pathlib; pathlib.Path('state3.json').write_text(os.environ['WM_TEST3_STORAGE_STATE'])"
           python -c "import os, pathlib; pathlib.Path('state4.json').write_text(os.environ['WM_TEST4_STORAGE_STATE'])"
           python -c "import os, pathlib; pathlib.Path('state5.json').write_text(os.environ['WM_TEST5_STORAGE_STATE'])"
+          python -c "import os, pathlib; pathlib.Path('state6.json').write_text(os.environ['WM_TEST6_STORAGE_STATE'])"
+          python -c "import os, pathlib; pathlib.Path('state7.json').write_text(os.environ['WM_TEST7_STORAGE_STATE'])"
+          python -c "import os, pathlib; pathlib.Path('state8.json').write_text(os.environ['WM_TEST8_STORAGE_STATE'])"
+          python -c "import os, pathlib; pathlib.Path('state9.json').write_text(os.environ['WM_TEST9_STORAGE_STATE'])"
 
       - name: Jitter aleatoire (0-15s)
         run: python -c "import random, time; time.sleep(random.uniform(0, 15))"
@@ -126,6 +134,46 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
         run: gh secret set WM_TEST5_STORAGE_STATE --repo ${{ github.repository }} < state5.json
+
+      - name: Compte 6 -> lecture
+        continue-on-error: true
+        run: python wm_report_rares.py compte6=state6.json --rarities "${{ inputs.rarities }}" --json-out frag6.json
+
+      - name: Compte 6 -> sauvegarde la session
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh secret set WM_TEST6_STORAGE_STATE --repo ${{ github.repository }} < state6.json
+
+      - name: Compte 7 -> lecture
+        continue-on-error: true
+        run: python wm_report_rares.py compte7=state7.json --rarities "${{ inputs.rarities }}" --json-out frag7.json
+
+      - name: Compte 7 -> sauvegarde la session
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh secret set WM_TEST7_STORAGE_STATE --repo ${{ github.repository }} < state7.json
+
+      - name: Compte 8 -> lecture
+        continue-on-error: true
+        run: python wm_report_rares.py compte8=state8.json --rarities "${{ inputs.rarities }}" --json-out frag8.json
+
+      - name: Compte 8 -> sauvegarde la session
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh secret set WM_TEST8_STORAGE_STATE --repo ${{ github.repository }} < state8.json
+
+      - name: Compte 9 -> lecture
+        continue-on-error: true
+        run: python wm_report_rares.py compte9=state9.json --rarities "${{ inputs.rarities }}" --json-out frag9.json
+
+      - name: Compte 9 -> sauvegarde la session
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh secret set WM_TEST9_STORAGE_STATE --repo ${{ github.repository }} < state9.json
 
       # Fusionne les fragments produits ci-dessus. `if: always()` et le glob
       # tolerant : un compte dont la lecture a echoue n'a pas de fragment,
