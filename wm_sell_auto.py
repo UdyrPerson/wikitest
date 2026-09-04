@@ -19,7 +19,9 @@ STRATEGIE (definie le 03/09/2026)
 
    On mesure donc la dispersion par l'INTERQUARTILE, (q3-q1)/mediane, qui
    ignore les extremes et discrimine reellement : mediane 0.75, un seuil a
-   0.70 retient 45% des cartes, a 0.50 il en retient 20%.
+   0.70 retient 45% des cartes L, a 0.50 il en retient 20%. Les UR sont
+   bien plus dispersees (mediane 1.31) et ont donc leur propre seuil, cf
+   DISPERSION_MAX.
 
 3. Priorisation. Les emplacements d'enchere sont rares (SLOTS_MAX), donc
    la question n'est pas "quelles cartes peut-on vendre" mais "lesquelles
@@ -56,7 +58,7 @@ STRATEGIE (definie le 03/09/2026)
 
    Leur prix suit une ENCHERE DEGRESSIVE : on part de la valeur maximale
    jamais atteinte par la carte, et chaque passage sans acheteur divise le
-   prix par deux, jusqu'au plancher de PRIX_PLANCHER. Ces cartes sont
+   prix par FACTEUR_DESCENTE, jusqu'au plancher de PRIX_PLANCHER. Ces cartes sont
    typiquement bimodales (une masse de ventes au plancher, quelques
    envolees) : partir du haut ne coute que du temps, alors que partir du
    bas laisserait passer l'envolee.
@@ -100,17 +102,37 @@ MARGE = 1.10
 # que le jeu ne propose pas se signale comme automatisee.
 DUREES_VALIDES = (10, 30, 60, 180, 360, 720, 1440)
 DUREE_MIN = 360  # 6 h
-SLOTS_MAX = 3    # consigne ; borne aussi par ce que renvoie le serveur
+# Passe de 3 a 5 le 04/09/2026 : les cinq comptes plafonnaient en
+# permanence a 3 encheres en cours, donc plus rien ne partait alors que le
+# serveur en autorise 5 (10 sur le premium). Reste borne par ce que renvoie
+# reellement le serveur, jamais suppose.
+SLOTS_MAX = 5
 
 # Fiabilite de la moyenne. Voir le point 2 du docstring : seuil sur la
 # dispersion interquartile, pas sur l'ecart min-max.
-DISPERSION_MAX = 0.70
+#
+# Seuil PAR RARETE depuis le 04/09/2026. Le 0.70 avait ete calibre sur les
+# L, ou il retient 45% du catalogue. Applique aux UR il n'en retenait que
+# 12% : leur marche est structurellement plus erratique (dispersion
+# mediane 1.31 contre 0.75 pour les L, mesure sur les tables de
+# reference). Resultat, 45 UR possedees sur 47 partaient en enchere
+# degressive lente. A 1.00 on en retient 31%, ce qui rapproche les UR du
+# regime des L sans pour autant valider des moyennes absurdes.
+DISPERSION_MAX = {"L": 0.70, "UR": 1.00}
+DISPERSION_DEFAUT = 0.70
 N_MIN = 5
 
 # Prix plancher. Toutes les raretes montrent une masse de ventes a
-# exactement 10 wb : c'est le plancher pratique du marche, et la division
-# par deux des cartes non fiables s'y arrete.
+# exactement 10 wb : c'est le plancher pratique du marche, et la descente
+# des cartes non fiables s'y arrete.
 PRIX_PLANCHER = 10
+
+# Diviseur de l'enchere degressive a chaque passage sans acheteur. Etait 2
+# ; ramene a 1.5 le 04/09/2026 pour descendre plus doucement : diviser par
+# deux fait sauter des paliers de prix ou la carte se serait peut-etre
+# vendue. La contrepartie est qu'il faut plus de cycles pour atteindre le
+# plancher.
+FACTEUR_DESCENTE = 1.5
 
 
 def charger_reference(rarity: str):
@@ -221,10 +243,10 @@ def prix_degressif(fiche, dernier_demande):
     """
     if dernier_demande is None:
         return max(int(fiche["max"]), PRIX_PLANCHER)
-    return max(int(dernier_demande) // 2, PRIX_PLANCHER)
+    return max(int(dernier_demande / FACTEUR_DESCENTE), PRIX_PLANCHER)
 
 
-def candidats(rows, ref, exclues, derniers=None, rang_rarete=0):
+def candidats(rows, ref, exclues, derniers=None, rang_rarete=0, dispersion_max=DISPERSION_DEFAUT):
     """Possessions vendables, en deux niveaux de priorite.
 
     Niveau 1 -- la moyenne est exploitable : prix = moyenne x MARGE,
@@ -248,7 +270,7 @@ def candidats(rows, ref, exclues, derniers=None, rang_rarete=0):
             continue  # carte absente de la table : aucun prix de reference
 
         dispersion = (fiche["q3"] - fiche["q1"]) / fiche["med"]
-        fiable = fiche["n"] >= N_MIN and dispersion <= DISPERSION_MAX
+        fiable = fiche["n"] >= N_MIN and dispersion <= dispersion_max
 
         if fiable:
             demande = int(round(fiche["moy"] * MARGE))
@@ -467,15 +489,20 @@ def main():
             en_cours, plafond, libres = slots_libres(ctx)
             print(f"Session : {state}")
             print(f"Encheres : {en_cours}/{plafond} en cours — {libres} emplacement(s) utilisable(s)")
+            seuils_txt = ", ".join(
+                f"{r}:{DISPERSION_MAX.get(r, DISPERSION_DEFAUT)}" for r in raretes
+            )
             print(f"Reglage  : moyenne x {marge}, duree {duree} min, "
-                  f"dispersion <= {DISPERSION_MAX}, n >= {N_MIN}\n")
+                  f"dispersion <= {seuils_txt}, n >= {N_MIN}, "
+                  f"descente /{FACTEUR_DESCENTE}\n")
 
             exclues = cartes_deja_en_vente(ctx)
             if exclues:
                 print(f"{len(exclues)} carte(s) deja sur le marche, ecartee(s).")
             derniers = derniers_prix(ctx)
             if derniers:
-                print(f"{len(derniers)} carte(s) invendue(s) precedemment : prix divise par deux.")
+                print(f"{len(derniers)} carte(s) invendue(s) precedemment : "
+                      f"prix divise par {FACTEUR_DESCENTE}.")
             print()
 
             tous = []
@@ -484,7 +511,8 @@ def main():
                 if not ref:
                     continue
                 rows = collection(ctx, rarete)
-                cands = candidats(rows, ref, exclues, derniers, rang)
+                seuil = DISPERSION_MAX.get(rarete, DISPERSION_DEFAUT)
+                cands = candidats(rows, ref, exclues, derniers, rang, seuil)
                 n1 = sum(1 for c in cands if c["niveau"] == 1)
                 print(f"## {rarete} — {len(rows)} possession(s), "
                       f"{n1} fiable(s) + {len(cands) - n1} en enchere degressive")
