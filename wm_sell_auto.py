@@ -137,12 +137,16 @@ N_MIN = 5
 # des cartes non fiables s'y arrete.
 PRIX_PLANCHER = 10
 
-# Diviseur de l'enchere degressive a chaque passage sans acheteur. Etait 2
-# ; ramene a 1.5 le 04/09/2026 pour descendre plus doucement : diviser par
-# deux fait sauter des paliers de prix ou la carte se serait peut-etre
-# vendue. La contrepartie est qu'il faut plus de cycles pour atteindre le
-# plancher.
-FACTEUR_DESCENTE = 1.5
+# Diviseur applique a chaque passage sans acheteur. Successivement 2, puis
+# 1.5, puis 1.2 le 04/09/2026 : cette derniere valeur est celle que
+# l'utilisateur applique lui-meme a la main sur son compte principal (pas
+# median mesure sur ses descentes : 777->678->555->456, soit /1.15 a /1.22).
+#
+# La consigne est explicite : mieux vaut qu'une enchere ne parte pas parce
+# que le prix etait trop haut, quitte a baisser un cran et relancer, que de
+# brader. Nos cartes n'expirent pas -- ne pas vendre ne coute qu'un
+# emplacement, jamais la valeur de la carte.
+FACTEUR_DESCENTE = 1.2
 
 # Duree raccourcie des le SECOND passage d'une carte en descente : une
 # carte qui n'est pas partie au prix fort n'a pas besoin d'immobiliser un
@@ -279,17 +283,27 @@ def prix_degressif(fiche, dernier_demande):
     L'etat n'est pas stocke localement : un runner GitHub part d'un
     checkout propre. On repart du dernier prix demande, relu sur le site.
     """
+    return (prix_initial_degressif(fiche) if dernier_demande is None
+            else prix_suivant(fiche, dernier_demande))
+
+
+def prix_initial_degressif(fiche):
+    """Premiere mise a prix d'une carte erratique : son maximum observe."""
     plancher = plancher_carte(fiche)
     # Carte dont le meilleur prix jamais atteint est deja sous le plancher :
     # la lister reviendrait a demander plus que ce qu'elle a jamais valu.
     # On y renonce -- c'est le cas de 25% des UR.
     if int(fiche["max"]) < plancher:
         return None
-    if dernier_demande is None:
-        return int(fiche["max"])
+    return int(fiche["max"])
+
+
+def prix_suivant(fiche, dernier_demande):
+    """Prix apres un passage sans preneur : un cran en dessous."""
+    plancher = plancher_carte(fiche)
     prix = int(dernier_demande / FACTEUR_DESCENTE)
     if prix < plancher:
-        return None  # descente terminee : on renonce plutot que de brader
+        return None  # on renonce plutot que de brader
     return prix
 
 
@@ -329,15 +343,20 @@ def candidats(rows, ref, exclues, derniers=None, rang_rarete=0, dispersion_max=D
         dispersion = (fiche["q3"] - fiche["q1"]) / fiche["med"]
         fiable = fiche["n"] >= N_MIN and dispersion <= dispersion_max
 
-        if fiable:
+        deja_vue = derniers.get(cid)
+        if deja_vue is not None:
+            # Deja proposee sans preneur : on baisse d'un cran, que la carte
+            # soit fiable ou non. Avant le 04/09/2026 seules les cartes
+            # erratiques descendaient ; une carte fiable invendue etait
+            # remise indefiniment AU MEME PRIX, donc restait invendue.
+            demande = prix_suivant(fiche, deja_vue)
+        elif fiable:
             demande = int(round(fiche["moy"] * MARGE))
-            duree_carte = None          # duree par defaut du run
         else:
-            deja_vue = derniers.get(cid)
-            demande = prix_degressif(fiche, deja_vue)
-            # Des le second passage, on raccourcit : inutile d'immobiliser
-            # six heures pour reverifier un prix plus bas.
-            duree_carte = DUREE_DESCENTE if deja_vue is not None else None
+            demande = prix_initial_degressif(fiche)
+        # Des le second passage on raccourcit : inutile d'immobiliser six
+        # heures pour reverifier un prix plus bas.
+        duree_carte = DUREE_DESCENTE if deja_vue is not None else None
         if not demande or demande <= 0:
             continue
 
