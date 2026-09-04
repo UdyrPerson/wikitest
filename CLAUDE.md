@@ -366,8 +366,16 @@ Trois points d'état de la machine :
   les plus exposés aux chevauchements de workflows (ceux qui bouclaient sur
   les 429). Un job qui reste vert alors qu'un compte est en 401 étant
   invisible, chaque workflow **signale désormais les comptes en échec** dans
-  le résumé du run, donne la commande de réparation, et fait échouer le job
-  pour déclencher la notification.
+  le résumé du run et donne la commande de réparation. Les trois workflows
+  planifiés (`boosters`, `discard`, `trade`) **font en plus échouer le job**,
+  parce qu'ils tournent sans personne devant et n'ont que ça pour notifier.
+  `report-rares` non : il est en déclenchement manuel, on est déjà devant
+  l'écran, et le rougir pendant un incident qu'on connaît déjà n'apprend qu'à
+  ignorer le rouge. Il a en revanche un contrôle que les autres n'ont pas —
+  la liste des comptes **sans fragment**. Un 401 est toujours visible (le
+  script l'attrape et l'écrit dans son fragment) ; c'est le plantage
+  *précoce*, avant l'écriture, qui passait sous le radar, `merge_fragments`
+  n'ayant aucune liste des comptes attendus.
 - **Résolu : les 429 des comptes 2 et 3 étaient la limite quotidienne.**
   Ils saturaient `--count 30` à chaque run (30 paquets toutes les 50 min)
   et ont épuisé leur quota du jour ; les comptes 1 et 4, qui vident leur
