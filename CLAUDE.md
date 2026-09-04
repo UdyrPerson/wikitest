@@ -315,6 +315,12 @@ Trois points d'état de la machine :
   `oursours` pour réparer. D'où `wm_session_io.identite()` et l'option
   `--expect` : **vérifier le pseudo avant d'écrire dans un secret**.
 - **Les workflows tournent normalement**, à la cadence de 50 min prévue.
+- **Point ouvert : les comptes 2 et 3 sont en 429 permanent sur
+  `/api/packs/open`** et n'ouvrent aucun paquet (0 sur tous les runs du
+  04/09, alors que 1, 4 et 5 ouvrent normalement). Hypothèse la plus
+  probable : la boucle de 30 réessais les martelait 30 fois par cycle, ce
+  qui entretenait la limitation. `MAX_429` divise ce martèlement par
+  quinze — à revérifier après quelques cycles pour voir s'ils repartent.
 - **Le quota Actions n'est plus une contrainte : le dépôt est public**, donc
   les minutes sont gratuites et illimitées. L'arithmétique reste bonne à
   connaître si le dépôt redevenait privé — à 50 min de cadence, la défausse
