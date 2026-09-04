@@ -308,6 +308,7 @@ def annonces_actives(req_ctx):
             "prix": a.get("base_amount"),
             "mise": a.get("current_bid"),
             "fin": a.get("end_at", ""),
+            "card_id": a.get("card_id") or card.get("id"),
             "auction_id": a.get("id"),
         })
     return out
@@ -331,6 +332,7 @@ def historique(req_ctx):
             "base": a.get("base_amount"),
             "final": a.get("final_price"),
             "statut": a.get("status"),
+            "card_id": a.get("card_id") or card.get("id"),
             "regle": (a.get("settled_at") or "")[:16],
         }
         (vendues if a.get("final_price") else invendues).append(entree)
@@ -385,7 +387,14 @@ def merge_fragments(paths):
         print("_Aucune vente conclue pour l'instant._")
     print()
 
-    invendues = [(f.get("compte", "?"), v) for f in frags for v in (f.get("invendues") or [])]
+    # Une invendue deja remise en vente n'attend plus rien : on ne garde
+    # que celles dont la carte n'est pas sur le marche a cet instant.
+    invendues = []
+    for f in frags:
+        en_vente = {a.get("card_id") for a in (f.get("actives") or [])}
+        for v in f.get("invendues") or []:
+            if v.get("card_id") not in en_vente:
+                invendues.append((f.get("compte", "?"), v))
     if invendues:
         print(f"### Invendues, en attente de repositionnement — {len(invendues)}\n")
         print("| Carte | Rareté | Compte | Dernier prix |")

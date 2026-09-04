@@ -44,7 +44,7 @@ on:
       rarities:
         description: "Raretes a vendre (L, ou L,UR quand UR sera scrape)"
         required: false
-        default: "L"
+        default: "L,UR"
       duration:
         description: "Duree des encheres"
         type: choice
@@ -71,7 +71,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  RARITIES: ${{ inputs.rarities || 'L' }}
+  RARITIES: ${{ inputs.rarities || 'L,UR' }}
   DUREE: ${{ inputs.duration || '360' }}
 
 jobs:
