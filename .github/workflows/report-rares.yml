@@ -183,3 +183,37 @@ jobs:
         run: |
           python wm_report_rares.py --merge $(ls frag*.json 2>/dev/null) \
             | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # Un compte dont le script meurt AVANT d'ecrire son fragment ne
+      # figure nulle part dans le rapport : merge_fragments ne travaille
+      # que sur les fragments existants et n'a aucune liste des comptes
+      # attendus. Un 401 est bien signale (le script l'attrape et l'ecrit
+      # dans son fragment) ; c'est le plantage precoce qui passe sous le
+      # radar, avec pour seul indice un titre qui annonce 8 comptes au
+      # lieu de 9. Seul le workflow connait la liste complete, d'ou ce
+      # controle ici.
+      #
+      # Pas d'exit 1, contrairement a boosters/discard/trade : ceux-la
+      # tournent sans personne devant et n'ont que l'echec du job pour
+      # notifier. Ce rapport est en declenchement manuel -- on est deja
+      # devant l'ecran, et le rougir pendant un incident qu'on connait
+      # deja n'apprend qu'a ignorer le rouge.
+      - name: Signale les comptes sans fragment
+        if: always()
+        run: |
+          manquants=""
+          for paire in 1:compte1 2:compte2 3:collecteur 4:compte4 5:compte5 \
+                       6:compte6 7:compte7 8:compte8 9:compte9; do
+            n="${paire%%:*}"
+            [ -f "frag${n}.json" ] || manquants="$manquants ${paire#*:}"
+          done
+          if [ -n "$manquants" ]; then
+            {
+              echo ""
+              echo "### Comptes sans resultat :$manquants"
+              echo ""
+              echo "La lecture s'est interrompue avant d'ecrire le resultat de ces"
+              echo "comptes : ils ne figurent nulle part dans le tableau ci-dessus."
+              echo "Voir leurs logs d'etape pour la cause."
+            } | tee -a "$GITHUB_STEP_SUMMARY"
+          fi

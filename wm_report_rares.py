@@ -216,6 +216,18 @@ def main():
     render(aggregate, skipped, balance, balance_of, rarities, len(accounts))
 
 
+def _labels_reparables():
+    """Labels que wm_session_repair.py sait reconnecter, ou un ensemble vide.
+
+    Un label libre (mode direct, `monlabel=session.json`) ne doit pas
+    donner lieu a une commande de reparation qui echouerait."""
+    try:
+        from wm_session_repair import COMPTES
+        return set(COMPTES)
+    except Exception:
+        return set()
+
+
 def render(aggregate, skipped, balance, balance_of, rarities, n_accounts):
     """Rapport Markdown, commun au mode direct et au mode --merge."""
     print(f"## Cartes {'/'.join(rarities)} — {n_accounts} comptes\n")
@@ -250,6 +262,18 @@ def render(aggregate, skipped, balance, balance_of, rarities, n_accounts):
         print("\n### Comptes non lus\n")
         for label, reason in skipped:
             print(f"- **{label}** : {reason}")
+
+        # Les labels du workflow (compte1, collecteur, compte4...) sont
+        # exactement les cles de COMPTES dans wm_session_repair : la
+        # commande se construit sans table de correspondance. Import
+        # tardif et tolerant -- le rapport doit s'afficher meme si l'outil
+        # de reparation est absent ou renomme.
+        reparables = [l for l, r in skipped if "401" in r and l in _labels_reparables()]
+        if reparables:
+            print("\nSession probablement revoquee. Reparation, en local :\n")
+            print("```")
+            print("python wm_session_repair.py " + " ".join(reparables))
+            print("```")
 
 
 if __name__ == "__main__":
