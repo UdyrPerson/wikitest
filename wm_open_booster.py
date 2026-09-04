@@ -567,10 +567,19 @@ def open_via_api(req_ctx, count: int):
         # plus. On repassera au prochain cycle.
         if resp.status == 429:
             trop_vite += 1
+            # On affiche ce que dit le serveur : le corps et les en-tetes de
+            # limitation sont la seule facon de savoir QUELLE limite on
+            # touche (par minute ? par heure ? quota de paquets ?) et
+            # combien de temps elle dure. Sans ca, un 429 est muet et on en
+            # est reduit aux hypotheses.
+            entetes = {k: v for k, v in (resp.headers or {}).items()
+                       if "ratelimit" in k.lower() or k.lower() in ("retry-after", "x-request-id")}
+            print(f"    429 ({trop_vite}) corps : {resp.text()[:300]}")
+            if entetes:
+                print(f"    429 en-tetes : {entetes}")
             if trop_vite > MAX_429:
                 print(f"    429 encore apres {MAX_429} pause(s) — on laisse ce compte au prochain cycle")
                 break
-            print(f"    429 : pause de 60s ({trop_vite}/{MAX_429})")
             time.sleep(60)
             continue
         if resp.status >= 400:
