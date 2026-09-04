@@ -11,3 +11,5 @@ wm_discover_log.txt
 .claude/
 lancer_wikimasters.txt
 wm_comptes.json
+.wikilover_id
+.repair-*.json
