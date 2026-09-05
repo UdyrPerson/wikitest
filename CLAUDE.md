@@ -173,9 +173,11 @@ Deux leçons de l'incident, au-delà du quota :
   `id` ni `continue-on-error`, donc elle ne figurait pas dans le bilan de
   fin. Sa session est morte le 05/09 à 11:29 et chaque run a affiché
   « Tous les comptes ont ete traites » pendant six heures ;
-- **un 429 sur une acceptation ne fait pas échouer le job**, et c'est
-  voulu : `wm_trade_accept_all.py` signale l'offre refusée et continue.
-  Mais du coup le quota atteint ne se voit que dans les logs.
+- **on s'arrête au premier `trade_daily_limit`.** Une fois le quota
+  atteint, toutes les offres suivantes prendront le même 429 : insister,
+  c'était 147 appels perdus à deux secondes d'intervalle. Même traitement
+  que la limite de paquets — on s'arrête net et on annonce ce qui reste
+  en attente. Un 429 ne fait toujours pas échouer le job.
 
 **`mine=1` ne filtre pas.** Le paramètre laisse `auctions` sur le marché
 entier et **ajoute** à côté les tableaux `selling`, `bidding`, `history`,

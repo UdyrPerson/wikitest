@@ -64,6 +64,25 @@ def accept_pending(req):
         resp = req.patch(
             f"/api/trades/{t['id']}", data={"action": "accept"}, timeout=90000
         )
+
+        # Limite quotidienne d'echanges : 50/jour sur un compte gratuit,
+        # envois ET acceptations confondus. Une fois atteinte, toutes les
+        # offres suivantes prendront le meme 429 -- insister, c'est 147
+        # appels perdus a deux secondes d'intervalle (constate le
+        # 05/09/2026). Meme traitement que la limite de paquets dans
+        # wm_open_booster.py : on s'arrete net et on dit ce qui reste.
+        if resp.status == 429:
+            try:
+                payload = resp.json()
+            except Exception:
+                payload = {}
+            if payload.get("code") == "trade_daily_limit":
+                reste = len(pending) - i + 1
+                print(f"  [{i}] limite quotidienne d'echanges atteinte "
+                      f"({payload.get('error', '')[:80]})")
+                print(f"  {reste} offre(s) laissee(s) en attente — reprise au prochain passage.")
+                return
+
         if resp.status >= 400:
             print(f"  [{i}] echec sur offre de {initiator} ({wb} wb) : {resp.status} {resp.text()[:200]}")
         else:
