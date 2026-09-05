@@ -215,7 +215,15 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
         run: gh secret set WM_TEST9_STORAGE_STATE --repo ${{ github.repository }} < state9.json
 
+      # Le collecteur est le seul compte dont l'echec ne se rattrape pas :
+      # les huit offres du jour restent en attente. Il lui manquait
+      # pourtant l'id et le continue-on-error des autres, donc il
+      # n'apparaissait pas dans le bilan -- le 05/09/2026, sa session est
+      # morte a 11:29 et chaque run a affiche « Tous les comptes ont ete
+      # traites » pendant six heures, pendant que les offres s'empilaient.
       - name: Collecteur -> accepte toutes les offres en attente
+        id: c8
+        continue-on-error: true
         run: python wm_trade_accept_all.py state3.json
 
       - name: Compte 3 -> sauvegarde la session
@@ -241,6 +249,7 @@ jobs:
           [ "${{ steps.c5.outcome }}" = "success" ] || echecs="$echecs compte7"
           [ "${{ steps.c6.outcome }}" = "success" ] || echecs="$echecs compte8"
           [ "${{ steps.c7.outcome }}" = "success" ] || echecs="$echecs compte9"
+          [ "${{ steps.c8.outcome }}" = "success" ] || echecs="$echecs collecteur"
           if [ -n "$echecs" ]; then
             {
               echo "## Comptes en echec :$echecs"

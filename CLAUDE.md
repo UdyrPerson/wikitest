@@ -143,15 +143,39 @@ Le stock, lui, semble plafonner autour de 9–10 : pendant une ouverture en
 rafale, `packs_remaining` reste à 9 sur les premiers paquets avant de
 décroître, la régénération compensant au fil de l'eau.
 
-**Un compte est limité à 50 échanges par jour.** La limite ne gêne pas les
-émetteurs, qui n'envoient qu'une offre par passage, mais le **collecteur**,
-qui est de tous les échanges : à 50 min de cadence, huit émetteurs lui
+**Il existe aussi une limite quotidienne d'ÉCHANGES**, distincte de celle
+des paquets. Elle se manifeste par un 429 sur `PATCH /api/trades/{id}`
+(relevé le 05/09/2026) :
+
+```json
+{"error": "Limite quotidienne d'échanges atteinte (offres envoyées et
+ acceptations). Comptes gratuits : 50/jour · PRO : 200/jour.",
+ "code": "trade_daily_limit"}
+```
+
+Le point important est entre parenthèses : **envois et acceptations
+partagent le même compteur**. Un émetteur n'en consommait qu'un par
+passage, soit ~29/jour à la cadence de 50 min — sous le plafond. Le
+**collecteur**, lui, est de tous les échanges : huit émetteurs lui
 adressaient ~230 offres par jour, plus de quatre fois son quota. Le surplus
-ne disparaît pas, il s'empile en `pending` — 100+ offres en attente
-constatées le 04/09/2026. D'où la cadence **journalière** de `trade.yml`,
-seule exception aux 50 min du projet. Rien n'est perdu :
-`wm_trade_gift_wb.py` offre tout le solde du moment, donc une passe par
-jour transfère la même somme qu'en vingt-neuf.
+ne disparaît pas, il s'empile en `pending` — **99 offres en attente sur 199
+échanges au total** le 05/09/2026 à 11:15.
+
+D'où la cadence **journalière** de `trade.yml`, seule exception aux 50 min
+du projet : 1 envoi par émetteur, 8 acceptations pour le collecteur. Rien
+n'est perdu, `wm_trade_gift_wb.py` offrant tout le solde du moment.
+
+Deux leçons de l'incident, au-delà du quota :
+
+- **le collecteur n'a pas de filet.** Un émetteur qui rate son tour
+  rattrape au suivant, son solde étant cumulatif ; le collecteur, non —
+  ce qu'il n'accepte pas reste en attente. Son étape n'avait pourtant ni
+  `id` ni `continue-on-error`, donc elle ne figurait pas dans le bilan de
+  fin. Sa session est morte le 05/09 à 11:29 et chaque run a affiché
+  « Tous les comptes ont ete traites » pendant six heures ;
+- **un 429 sur une acceptation ne fait pas échouer le job**, et c'est
+  voulu : `wm_trade_accept_all.py` signale l'offre refusée et continue.
+  Mais du coup le quota atteint ne se voit que dans les logs.
 
 **`mine=1` ne filtre pas.** Le paramètre laisse `auctions` sur le marché
 entier et **ajoute** à côté les tableaux `selling`, `bidding`, `history`,
