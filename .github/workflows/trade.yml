@@ -1,6 +1,6 @@
 name: Trade WB vers le compte collecteur
 
-# Consolide les wikibidous des quatre comptes emetteurs vers le compte
+# Consolide les wikibidous des huit comptes emetteurs vers le compte
 # collecteur (compte 3), via le systeme d'echange du jeu :
 # wm_trade_gift_wb.py (offre tout le solde, sans carte) sur chaque
 # emetteur, puis wm_trade_accept_all.py (accepte toutes les offres en
@@ -15,21 +15,32 @@ name: Trade WB vers le compte collecteur
 # Le collecteur doit deja etre "ami" avec chaque compte emetteur : le
 # script echoue clairement si l'amitie n'existe pas encore.
 #
-# Cadence 50 min (etait horaire), alignee sur les autres workflows : un
-# cycle plus court que l'heure evite de tomber systematiquement apres
-# l'expiration des jetons Supabase, qui durent exactement 1h. Voir
-# auto-booster.yml pour le pourquoi des six lignes cron. Decale de
-# +25 min par rapport au compte 1 pour ne croiser ni les creneaux
-# d'ouverture (0/10/20/30/40) ni celui de la defausse (+5).
+# CADENCE : UNE FOIS PAR JOUR depuis le 04/09/2026, contre 50 min avant.
+#
+# Un compte est limite a 50 echanges par jour. La contrainte ne porte pas
+# sur les emetteurs, qui n'en envoyaient qu'un par passage, mais sur le
+# COLLECTEUR : il est de tous les echanges. A 50 min de cadence, huit
+# emetteurs lui adressaient environ 8 x 29 = 230 offres par jour, plus de
+# quatre fois son quota. Le surplus s'accumulait en file d'attente --
+# 100+ offres en attente constatees le 04/09/2026.
+#
+# Une seule passe par jour ramene le collecteur a 8 acceptations, tres en
+# dessous du plafond. Rien n'est perdu au passage : wm_trade_gift_wb.py
+# offre TOUT le solde du moment, donc un emetteur qui ne donne qu'une fois
+# par jour donne la meme somme en une fois au lieu de vingt-neuf.
+#
+# Les autres workflows gardent leur cadence de 50 min : eux ne sont pas
+# concernes par cette limite.
+#
+# Minute 58 : aucun autre workflow ne l'utilise (ouverture 0/10/20/30/40,
+# defausse +5, vente :50). Heure 0 UTC : si le quota se remet a zero a
+# minuit UTC, la passe part sur un compteur neuf ; s'il s'agit d'une
+# fenetre glissante, l'heure n'a aucune importance -- dans les deux cas ce
+# creneau n'est jamais le mauvais.
 
 on:
   schedule:
-    - cron: "5 2,7,12,17,22 * * *"
-    - cron: "15 1,6,11,16,21 * * *"
-    - cron: "25 0,5,10,15,20 * * *"
-    - cron: "35 4,9,14,19 * * *"
-    - cron: "45 3,8,13,18,23 * * *"
-    - cron: "55 2,7,12,17,22 * * *"
+    - cron: "58 0 * * *"
   workflow_dispatch: {}
 
 permissions:

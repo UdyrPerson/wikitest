@@ -102,7 +102,7 @@ Endpoints connus et utilisés :
 | `POST /api/friends` | **Demande d'amitié.** `{"addressee_id": <uuid>}` → 201. Attend l'UUID, **pas** le pseudo (`{"error":"addressee_id requis"}` sinon) |
 | `PATCH /api/friends/{friendship_id}` | `{"action":"accept"}` → 200 `{"status":"accepted"}` |
 | `GET /api/wikibidous` | Solde courant |
-| `GET /api/trades`, `POST /api/trades`, `PATCH /api/trades/{id}` | Échanges (`{"action":"accept"}`) |
+| `GET /api/trades`, `POST /api/trades`, `PATCH /api/trades/{id}` | Échanges (`{"action":"accept"}`). **50 échanges/jour et par compte**, voir plus bas |
 
 Trois pièges :
 
@@ -142,6 +142,16 @@ retenir :
 Le stock, lui, semble plafonner autour de 9–10 : pendant une ouverture en
 rafale, `packs_remaining` reste à 9 sur les premiers paquets avant de
 décroître, la régénération compensant au fil de l'eau.
+
+**Un compte est limité à 50 échanges par jour.** La limite ne gêne pas les
+émetteurs, qui n'envoient qu'une offre par passage, mais le **collecteur**,
+qui est de tous les échanges : à 50 min de cadence, huit émetteurs lui
+adressaient ~230 offres par jour, plus de quatre fois son quota. Le surplus
+ne disparaît pas, il s'empile en `pending` — 100+ offres en attente
+constatées le 04/09/2026. D'où la cadence **journalière** de `trade.yml`,
+seule exception aux 50 min du projet. Rien n'est perdu :
+`wm_trade_gift_wb.py` offre tout le solde du moment, donc une passe par
+jour transfère la même somme qu'en vingt-neuf.
 
 **`mine=1` ne filtre pas.** Le paramètre laisse `auctions` sur le marché
 entier et **ajoute** à côté les tableaux `selling`, `bidding`, `history`,
@@ -224,7 +234,7 @@ les mettre en concurrence.
 |---|---|---|
 | `boosters.yml` | 50 min, minutes 0/10/20/30/40 | Les 9 comptes en **séquentiel dans un seul job**, `--count 10` chacun (voir la limite quotidienne) |
 | `discard.yml` | 50 min, +5 min | Défausse `C,PC,R,SR` sur les 9 comptes |
-| `trade.yml` | 50 min, +25 min | Les 4 émetteurs offrent leur solde, puis le collecteur accepte tout |
+| `trade.yml` | **1 jour**, 00:58 UTC | Les 8 émetteurs offrent leur solde, puis le collecteur accepte tout (voir la limite de 50 échanges/jour) |
 | `sell.yml` | 1 h, minute 50 | Met en vente les meilleures **UR et L** des 9 comptes. Entrée `dry_run` (vraie par défaut en manuel), `rarities` pour restreindre |
 | `report-rares.yml` | manuel | Lecture seule, rapport dans le résumé du run |
 
