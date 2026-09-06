@@ -433,9 +433,15 @@ def candidats(rows, ref, exclues, derniers=None, rang_rarete=0, dispersion_max=D
 
 
 def vendre(req_ctx, possession: str, prix: int, duree: int):
+    # timeout a 90s : le defaut de Playwright (30s) a fait planter la
+    # defausse du compte 4 le 06/09/2026 sur un POST tout aussi banal. Ici
+    # un timeout est particulierement couteux -- l'annonce est peut-etre
+    # creee cote serveur, mais on ne connait pas son auction_id, donc elle
+    # occupe un emplacement sans figurer dans le rapport.
     r = req_ctx.post(
         "/api/marketplace",
         data={"card_id": possession, "base_amount": prix, "duration_minutes": duree},
+        timeout=90000,
     )
     if r.status == 401:
         raise SystemExit("401 sur la mise en vente — session expiree.")

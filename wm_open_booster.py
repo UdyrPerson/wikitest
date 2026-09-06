@@ -538,7 +538,12 @@ def open_via_api(req_ctx, count: int):
     results = []
     trop_vite = 0
     for i in range(1, count + 1):
-        resp = req_ctx.post("/api/packs/open")
+        # timeout a 90s : le defaut de Playwright (30s) a fait planter la
+        # defausse du compte 4 le 06/09/2026. Un timeout est ici le pire cas
+        # de tout le projet -- le paquet est ouvert cote serveur et ses
+        # cartes sont deja revelees, mais on perd la reponse qui les porte.
+        # Le stock est decremente pour rien.
+        resp = req_ctx.post("/api/packs/open", timeout=90000)
 
         if resp.status == 401:
             raise SystemExit(

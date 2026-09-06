@@ -108,7 +108,8 @@ def discard_rarity(req_ctx, rarity: str, remaining_budget) -> int:
 
     discarded = 0
     while remaining_budget[0] > 0:
-        resp = req_ctx.get(f"/api/my-collection?sort=rarity&rarity={rarity}&page=0&stats=0")
+        resp = req_ctx.get(f"/api/my-collection?sort=rarity&rarity={rarity}&page=0&stats=0",
+                           timeout=90000)
         if resp.status == 401:
             raise SystemExit("401 sur my-collection — session expiree. Relance wm_session_auto.py.")
         if resp.status == 403:
@@ -141,7 +142,17 @@ def discard_rarity(req_ctx, rarity: str, remaining_budget) -> int:
         taille = BATCH if budget == float("inf") else min(BATCH, int(budget))
         ids = ids[:taille]
 
-        d_resp = req_ctx.post("/api/user-cards/bulk-discard", data={"card_ids": ids})
+        # timeout a 90s, comme /api/trades : le defaut de Playwright (30s) a
+        # fait planter la defausse du compte 4 le 06/09/2026 en plein lot de
+        # C (TimeoutError sur ce POST). Une defausse porte 50 cartes d'un
+        # coup et le serveur prend visiblement son temps sous charge.
+        #
+        # Un timeout ici est le pire cas : le lot est peut-etre defausse
+        # cote serveur, mais on abandonne la reponse -- donc le decompte et
+        # les cookies eventuellement tournes qu'elle portait. Rien n'est
+        # perdu pour autant, la boucle relisant la page 0 au tour suivant.
+        d_resp = req_ctx.post("/api/user-cards/bulk-discard",
+                              data={"card_ids": ids}, timeout=90000)
         if d_resp.status == 401:
             raise SystemExit("401 sur bulk-discard — session expiree. Relance wm_session_auto.py.")
         if d_resp.status == 403:

@@ -136,7 +136,9 @@ def decrire(row, ref):
 def mettre_en_vente(req_ctx, user_card_id: str, prix: int, duree: int):
     """POST /api/marketplace. Retourne l'auction_id."""
     payload = {"card_id": user_card_id, "base_amount": prix, "duration_minutes": duree}
-    r = req_ctx.post("/api/marketplace", data=payload)
+    # timeout a 90s, cf wm_discard.py : le defaut de 30s a deja fait
+    # echouer un POST de defausse le 06/09/2026.
+    r = req_ctx.post("/api/marketplace", data=payload, timeout=90000)
 
     if r.status == 401:
         raise SystemExit("401 sur la mise en vente — session expiree.")
