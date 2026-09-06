@@ -210,18 +210,28 @@ def fusionner(chemins) -> None:
         print("Aucun fragment lisible : tous les comptes ont echoue avant d'ecrire.")
         return
 
+    # Les colonnes de rarete sont construites a partir de ce qui a
+    # reellement ete defausse. Quand rien ne l'a ete, la liste est vide :
+    # d'ou l'assemblage par liste de cellules plutot que par
+    # concatenation, sinon un join vide laissait une colonne fantome et
+    # le tableau se decalait.
     raretes = [r for r in DEFAULT_RARITIES
                if any(f.get("rarites", {}).get(r) for f in fiches)]
-    print("| Compte | " + " | ".join(raretes) + " | Total | Solde |")
-    print("|---" * (len(raretes) + 3) + "|")
+    entetes = ["Compte"] + raretes + ["Total", "Solde"]
+    print("| " + " | ".join(entetes) + " |")
+    print("|" + "---|" * len(entetes))
+
+    def ligne(cases):
+        print("| " + " | ".join(cases) + " |")
+
     for f in fiches:
-        cases = [str(f.get("rarites", {}).get(r, 0)) for r in raretes]
-        print(f"| {f.get('label', '?')} | " + " | ".join(cases)
-              + f" | **{f.get('total', 0)}** | {f.get('solde', '?')} |")
+        ligne([str(f.get("label", "?"))]
+              + [str(f.get("rarites", {}).get(r, 0)) for r in raretes]
+              + [f"**{f.get('total', 0)}**", str(f.get("solde", "?"))])
     total = sum(f.get("total", 0) for f in fiches)
-    print("| **Total** | " + " | ".join(
-        str(sum(f.get("rarites", {}).get(r, 0) for f in fiches)) for r in raretes)
-        + f" | **{total}** | |")
+    ligne(["**Total**"]
+          + [str(sum(f.get("rarites", {}).get(r, 0) for f in fiches)) for r in raretes]
+          + [f"**{total}**", ""])
     print()
     if total == 0:
         print("*Rien a defausser : les comptes avaient deja ete vides au passage "
