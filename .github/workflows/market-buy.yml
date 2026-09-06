@@ -1,0 +1,158 @@
+name: Rachat des encheres du vendeur suivi
+
+# Le compte collecteur rachete, au prix demande, toutes les encheres
+# actives d'un vendeur donne.
+#
+# LE VENDEUR N'EST PAS DANS CE FICHIER
+#
+# Le depot est public, et ses journaux d'execution le sont donc aussi.
+# L'identite du vendeur vit dans le secret WM_MARKET_SELLER (son UUID de
+# preference, opaque ; son pseudo marche aussi), exactement comme le
+# pseudo du collecteur vit dans WM_TRADE_RECIPIENT. wm_market_buy.py ne
+# l'imprime jamais, meme en cas d'erreur.
+#
+# Reserve honnete : les journaux affichent les titres de cartes et les
+# prix des mises posees. Qui observerait le marche en direct pourrait, en
+# recoupant, remonter au vendeur. Supprimer aussi les titres rendrait le
+# journal inexploitable en cas de panne ; le compromis est assume.
+#
+# « AU PRIX FIXE » A UN SENS PRECIS
+#
+# La mise minimale du jeu vaut base_amount tant que personne n'a mise, et
+# max(ceil(1.1 * current_bid), current_bid + 1) ensuite. Le prix demande
+# n'est donc atteignable que sur une enchere vierge : des qu'un tiers se
+# positionne, le script saute l'enchere au lieu de surencherir. C'est la
+# consigne, et c'est ce qui borne la depense.
+#
+# CADENCE : LE POINT FAIBLE CONNU
+#
+# Une enchere de 10 minutes n'est PAS garantie d'etre vue. GitHub ne
+# promet pas l'heure d'un cron -- les runs planifies partent regulierement
+# avec 5 a 20 min de retard quand les runners sont charges -- et ce
+# workflow partage le verrou wm-sessions avec les quatre autres, donc il
+# attend son tour.
+#
+# Le remede est du cote vendeur, pas ici : poster des encheres d'au moins
+# 30 minutes les rend rattrapables. La duree de 10 min observee le
+# 06/09/2026 est le pire cas.
+#
+# Pourquoi */10 et pas */5 : chaque run occupe le verrou wm-sessions une
+# minute et demie environ (checkout, pip, balayage). A */5 cela ferait 30 %
+# du temps, et comme un run en attente en annule un autre en attente, la
+# course finirait par manger des runs d'ouverture ou de defausse -- le
+# coeur du projet. A */10 l'occupation retombe vers 15 %.
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Simulation seule (aucune mise posee)"
+        type: boolean
+        default: true
+      complet:
+        description: "Balayer tout le marche au lieu de la fenetre recente"
+        type: boolean
+        default: false
+      fenetre_min:
+        description: "Minutes d'anciennete balayees (defaut 90)"
+        default: "90"
+      max_depense:
+        description: "Plafond de depense pour ce passage, en wb (vide = tout le solde)"
+        default: ""
+
+permissions:
+  contents: read
+
+# CONCURRENCE PARTAGEE, NON NEGOCIABLE.
+# Ce workflow charge le secret du collecteur et le repousse apres coup,
+# comme les quatre autres. Deux workflows qui tournent en meme temps
+# repoussent des jetons issus de copies chargees a des instants
+# differents, ce qui rejoue un refresh token deja consomme et revoque la
+# session (cf CLAUDE.md). Le sortir de ce groupe pour gagner en reactivite
+# serait exactement l'erreur du 04/09/2026.
+concurrency:
+  group: wm-sessions
+  cancel-in-progress: false
+
+jobs:
+  buy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Installe Playwright (client API seulement, pas de navigateur)
+        run: pip install playwright
+
+      - name: Ecrit la session du collecteur depuis son secret
+        env:
+          WM_TEST3_STORAGE_STATE: ${{ secrets.WM_TEST3_STORAGE_STATE }}
+        run: python -c "import os, pathlib; pathlib.Path('state3.json').write_text(os.environ['WM_TEST3_STORAGE_STATE'])"
+
+      # Meme raisonnement que dans sell.yml : inputs.dry_run est la chaine
+      # vide sur un declenchement planifie, donc un test naif basculerait
+      # sur le cas faux et un run automatique ne miserait jamais. On exige
+      # explicitement l'evenement workflow_dispatch.
+      - name: Choisit simulation ou mise reelle
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "GO=" >> "$GITHUB_ENV"
+            echo "Mode simulation (declenchement manuel, dry_run coche)."
+          else
+            echo "GO=--go" >> "$GITHUB_ENV"
+          fi
+          if [ "${{ inputs.complet }}" = "true" ]; then
+            echo "COMPLET=--complet" >> "$GITHUB_ENV"
+          else
+            echo "COMPLET=" >> "$GITHUB_ENV"
+          fi
+          if [ -n "${{ inputs.max_depense }}" ]; then
+            echo "PLAFOND=--max-depense ${{ inputs.max_depense }}" >> "$GITHUB_ENV"
+          else
+            echo "PLAFOND=" >> "$GITHUB_ENV"
+          fi
+
+      # Un cron au metronome est la signature la plus facile a reperer.
+      - name: Jitter aleatoire (0-20s)
+        run: python -c "import random, time; time.sleep(random.uniform(0, 20))"
+
+      - name: Collecteur -> rachete les encheres du vendeur suivi
+        id: buy
+        continue-on-error: true
+        env:
+          WM_MARKET_SELLER: ${{ secrets.WM_MARKET_SELLER }}
+        run: |
+          python wm_market_buy.py state3.json \
+            --fenetre-min "${{ inputs.fenetre_min || '90' }}" \
+            $COMPLET $PLAFOND $GO | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # La session repart dans son secret juste apres le passage, jamais
+      # plus tard : c'est ce qui ramene la fenetre de course de plusieurs
+      # minutes a quelques secondes.
+      - name: Collecteur -> sauvegarde la session
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh secret set WM_TEST3_STORAGE_STATE --repo ${{ github.repository }} < state3.json
+
+      # Le job tourne sans personne devant : un echec silencieux passerait
+      # inapercu pendant des heures. Comme les trois autres workflows
+      # planifies, on rougit franchement et on donne la commande de
+      # reparation.
+      - name: Signale l'echec du collecteur
+        if: steps.buy.outcome != 'success'
+        run: |
+          {
+            echo "## Le collecteur a echoue"
+            echo ""
+            echo "Session probablement revoquee. Reparation :"
+            echo '```'
+            echo "python wm_session_repair.py collecteur"
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          exit 1

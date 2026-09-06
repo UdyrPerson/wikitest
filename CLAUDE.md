@@ -98,6 +98,9 @@ Endpoints connus et utilisés :
 | `GET /api/marketplace/mine` | `{"sellingCount": N, "maxConcurrentAuctions": M}` — **le plafond dépend du compte** : 5 sur un compte de test, 10 sur le premium |
 | `GET /api/marketplace/{auction_id}` | L'enchère complète : carte, mises, `end_at`, `status`, `final_price`, `base_repriced_at` |
 | `GET /api/marketplace/cards/{card_id}/sales` | **Ventes conclues** (`final_price`, `settled_at`) — **premium seulement** |
+| `POST /api/marketplace/{auction_id}/bid` | **Mise sur une enchère.** `{"amount": N}` → renvoie `bidder_balance`. Refus en 409 `{"code":"bid_too_low","min":N}` |
+| `POST /api/marketplace/{auction_id}/reprice` | Repositionne le prix d'une annonce (vue dans le JS, pas encore utilisée) |
+| `POST /api/marketplace/{auction_id}/settle` | Règle une enchère (vue dans le JS, pas encore utilisée) |
 | `GET /api/friends` | `{"friendships": [...], "counts": {...}}` — résout aussi un pseudo en `recipient_id` |
 | `POST /api/friends` | **Demande d'amitié.** `{"addressee_id": <uuid>}` → 201. Attend l'UUID, **pas** le pseudo (`{"error":"addressee_id requis"}` sinon) |
 | `PATCH /api/friends/{friendship_id}` | `{"action":"accept"}` → 200 `{"status":"accepted"}` |
@@ -186,6 +189,40 @@ avoir ses propres annonces revient à s'interdire 50 cartes prises au hasard
 (bug réel, corrigé le 03/09/2026). `selling` est aussi la bonne source pour
 repérer les annonces à repositionner.
 
+**Trois limites du marché en lecture, relevées le 06/09/2026 en construisant
+le rachat.**
+
+- **`limit` est plafonné à 50.** `limit=100` et `limit=200` renvoient
+  **zéro** enchère, sans erreur ni message. Demander plus grand ne
+  raccourcit pas le balayage, il le rend aveugle — un script conclurait
+  « rien trouvé » sur un marché plein. `wm_market_buy.py` borne donc la
+  valeur au lieu de se contenter de la documenter.
+- **Aucun filtre par vendeur n'existe.** `seller_id`, `seller`, `user_id`,
+  `sellerId` et `search` sont tous ignorés : le `total` reste identique et
+  les résultats ne sont pas filtrés. Le JS du site ne connaît aucune route
+  « enchères d'un joueur ». Pour trouver les annonces de quelqu'un, il faut
+  parcourir les ~15 500 enchères actives.
+- **La pagination n'est pas exhaustive**, pour la même raison que
+  `/api/cards` : un balayage complet a vu **15 223 enchères distinctes pour
+  un `total` annoncé à 15 336**. Les enchères qui se règlent en cours de
+  route décalent les suivantes vers l'avant, et ce qui passe sous le
+  curseur n'est jamais lu. Un balayage « complet » n'est donc pas une
+  garantie — mieux vaut un balayage **court** trié par `sort=recent`, qui
+  laisse moins de temps à la liste pour bouger.
+
+Tris acceptés : `recent`, `ending_soon`, `price_asc`, `price_desc`.
+
+**Mise minimale**, transcrite du JS du site :
+
+```js
+current_bid == null -> base_amount
+sinon               -> max(ceil(1.1 * current_bid), current_bid + 1)
+```
+
+Conséquence pour le rachat : **le prix demandé n'est atteignable que sur une
+enchère vierge.** Dès qu'un tiers mise, le minimum saute de 10 % et dépasse
+le prix fixé par le vendeur.
+
 Aucun endpoint de **retrait** d'enchère n'a été observé : une annonce postée
 va à son terme.
 
@@ -240,6 +277,7 @@ les mettre en concurrence.
 | `wm_sell.py` | **Met une carte aux enchères, à la main.** Simulation par défaut, `--go` obligatoire pour écrire, et `--go` exige une possession désignée (`--card`) dont la rareté est revérifiée dans la collection avant l'appel. Lit le plafond d'emplacements au lieu de le supposer, et refuse de vendre depuis la session premium. Suggère un prix depuis `data/sales-{rareté}.jsonl` |
 | `wm_trade_gift_wb.py` | Offre **tout** le solde de wikibidous à un ami, sans carte en retour |
 | `wm_trade_accept_all.py` | Accepte toutes les offres `pending`. Ne distingue pas reçu/envoyé — à n'utiliser que sur un compte qui ne fait que recevoir |
+| `wm_market_buy.py` | **Rachète au prix demandé toutes les enchères actives d'un vendeur.** Le vendeur vient de `WM_MARKET_SELLER` (UUID ou pseudo) et **n'est jamais imprimé** — dépôt public. Simulation par défaut, `--go` pour miser. Saute ce sur quoi un tiers a déjà misé, et ce dont on est déjà le meneur (idempotent) |
 | `wm_ouverture_booster.py` | Outil « ouvertureBooster » : un booster avec l'animation, en réutilisant la fenêtre persistante |
 | `wm_auto_booster.py` | Boucle locale toutes les ~10 min (±20 % de variation). Largement remplacé par les workflows |
 
@@ -262,9 +300,21 @@ les mettre en concurrence.
 | `discard.yml` | 50 min, +5 min | Défausse `C,PC,R,SR` sur les 9 comptes |
 | `trade.yml` | **1 jour**, 00:58 UTC | Les 8 émetteurs offrent leur solde, puis le collecteur accepte tout (voir la limite de 50 échanges/jour) |
 | `sell.yml` | 50 min, +15 min | Met en vente les meilleures **UR et L** des 9 comptes. Entrée `dry_run` (vraie par défaut en manuel), `rarities` pour restreindre |
+| `market-buy.yml` | **10 min** | Le collecteur rachète au prix demandé les enchères du vendeur suivi (`WM_MARKET_SELLER`). Entrées `dry_run`, `complet`, `fenetre_min`, `max_depense` |
 | `report-rares.yml` | manuel | Lecture seule, rapport dans le résumé du run |
 
-Trois choses à savoir avant d'y toucher :
+Quatre choses à savoir avant d'y toucher :
+
+**`market-buy.yml` est le seul à 10 min, et c'est déjà un compromis.** Il
+court après des enchères qui peuvent ne durer que 10 minutes, donc il
+voudrait tourner plus souvent. Mais chaque run occupe le verrou
+`wm-sessions` environ une minute et demie : à `*/5` cela ferait 30 % du
+temps, et comme un run en attente en annule un autre en attente, la course
+finirait par manger des runs d'ouverture ou de défausse. Le vrai remède est
+côté vendeur — **poster des enchères d'au moins 30 minutes** les rend
+rattrapables. GitHub ne promet de toute façon pas l'heure d'un cron : 5 à
+20 min de retard sont courants quand les runners sont chargés.
+
 
 **La cadence de 50 min n'est pas un chiffre rond par hasard.** Le jeton
 Supabase dure exactement 1 h. Un cycle plus court que l'heure évite de tomber
