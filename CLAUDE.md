@@ -77,6 +77,35 @@ c'est la route dynamique `/api/friends/{id}` qui capte le mot « requests ».
 L'écraser casse l'automatisation — c'est pour ça que le premium a son propre
 fichier.
 
+### Créer un compte se fait en local, pas sur un runner
+
+`wm_signup.py` enchaîne les quatre étapes : adresse jetable sur
+temp-mail.org, `/signup`, récupération du code, activation. Vérifié de bout
+en bout le 07/09/2026 (compte `jipise8650`).
+
+Trois choses apprises en le construisant :
+
+- le site n'envoie **pas un lien mais un code à six chiffres**, à saisir
+  dans `#signup-otp-code`. Le mail met une à deux minutes à arriver ;
+- le formulaire a **deux cases à cocher** obligatoires (majorité,
+  conditions d'utilisation) en plus des trois champs ;
+- dans la boîte temp-mail, plusieurs `a.viewLink` pointent le même
+  message et **le premier porte `href="javascript:void(0)"`** — naviguer
+  dessus lève `ERR_ABORTED`. Ne garder que les `href` en `http`.
+
+`.github/workflows/signup.yml` existe, en déclenchement manuel, mais
+**échoue sur un runner GitHub** — mesuré, pas supposé, le 07/09/2026 :
+temp-mail.org ne délivre jamais d'adresse depuis une IP de datacenter, et
+le script s'arrête à l'étape 1 sur 4. Turnstile sur `/signup` serait
+l'obstacle suivant, celui-là même qui a fait supprimer
+`refresh-sessions.yml`. Le workflow ne devient utile que sur un **runner
+auto-hébergé** ; sinon, la commande locale fait le travail.
+
+Les identifiants créés vont dans `comptes_crees.txt`, **couvert par le
+`.gitignore`** — dépôt public. Le mot de passe n'est jamais imprimé sur la
+sortie standard pour la même raison : les logs de run d'un dépôt public
+sont lisibles par tout le monde.
+
 ## L'API du site
 
 La question ouverte des débuts (vraies routes JSON ou payloads RSC ?) est
