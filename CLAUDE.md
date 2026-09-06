@@ -146,6 +146,48 @@ Le stock, lui, semble plafonner autour de 9–10 : pendant une ouverture en
 rafale, `packs_remaining` reste à 9 sur les premiers paquets avant de
 décroître, la régénération compensant au fil de l'eau.
 
+### Le plafond d'ouverture vaut 144 paquets par 24 h glissantes
+
+Établi le 06/09/2026 par deux chemins indépendants qui concordent.
+
+**Ce que le site publie.** Ses constantes client donnent la régénération,
+pas le plafond : `PACK_REGEN_PERIOD_MINUTES = 10` (PRO : 3),
+`MAX_CONCURRENT_AUCTIONS_REGULAR = 5` (PRO : 10),
+`BATTLE_CHALLENGES_PER_DAY_FREE = 3` (PRO : 20). Le nombre de paquets
+n'apparaît nulle part — ni dans le JS, ni dans le message du 429, qui
+reste vague là où celui des échanges chiffre « 50/jour · PRO : 200/jour ».
+
+**Ce que nos journaux prouvent.** Sur 96 runs d'ouverture (03→06/09) et
+**190 événements de limite** : le nombre de paquets ouverts dans les 24 h
+précédant le refus vaut **144, en médiane comme en maximum**. Les seules
+valeurs plus basses (114) tombent au bord de la fenêtre de journaux, où
+la donnée manque.
+
+**C'est une fenêtre glissante, pas une remise à zéro.** `retry_after`
+vaut l'instant du 144ᵉ paquet le plus récent, plus 24 h : `reprise − 24 h`
+tombe à **30 s en médiane** d'un paquet réellement ouvert, sur 182 des
+190 événements. Une remise à zéro à heure fixe donnerait au contraire des
+heures de reprise identiques d'un jour à l'autre ; les nôtres dérivent
+toujours vers l'avant (compte 2 : 19:43 → 19:45 → 20:30 sur trois jours).
+
+**144 = 1440 / 10.** Le plafond vaut donc exactement la régénération d'une
+journée. Ce n'est pas une règle anti-triche distincte : **on ne peut pas
+ouvrir plus qu'on ne régénère**. Trois conséquences pratiques :
+
+- **être limité n'est pas un problème, c'est la preuve du rendement
+  maximal.** Le 06/09, huit comptes sur neuf étaient à **144/144**, le
+  neuvième à 100 (session révoquée le matin) ;
+- **`--count` n'influe pas sur le débit.** Tant que les runs sont assez
+  fréquents pour que le stock (plafonné à 10) ne déborde pas, le total
+  journalier vaut 144 quoi qu'on demande. À 50 min de cadence on
+  accumule 5 paquets entre deux passages : aucune perte ;
+- **la seule façon d'aller plus haut est PRO**, dont la régénération de
+  3 min prédit un plafond de 480/24 h — non vérifié, faute de compte PRO.
+
+**Le bon indicateur n'est donc pas « suis-je limité ? » mais « suis-je à
+144 ? »** Un compte en dessous a un problème de disponibilité (session
+morte), pas de quota.
+
 **Il existe aussi une limite quotidienne d'ÉCHANGES**, distincte de celle
 des paquets. Elle se manifeste par un 429 sur `PATCH /api/trades/{id}`
 (relevé le 05/09/2026) :
@@ -535,13 +577,14 @@ Trois points d'état de la machine :
   *précoce*, avant l'écriture, qui passait sous le radar, `merge_fragments`
   n'ayant aucune liste des comptes attendus.
 - **Résolu : les 429 des comptes 2 et 3 étaient la limite quotidienne.**
-  Ils saturaient `--count 30` à chaque run (30 paquets toutes les 50 min)
-  et ont épuisé leur quota du jour ; les comptes 1 et 4, qui vident leur
-  stock en 2 à 10 paquets, n'ont jamais été limités. **`--count` est passé
-  à 10** le 04/09 : le quota étant journalier, l'ouvrir en rafale revenait
-  à le consommer en quelques heures puis à rester bloqué douze heures,
-  pendant lesquelles la régénération bute sur le plafond de stock et se
-  perd — environ 70 paquets par compte et par jour.
+  `--count` est passé de 30 à 10 le 04/09. Attention toutefois : la
+  justification d'alors — « ouvrir en rafale consomme le quota en
+  quelques heures puis bloque douze heures, soit ~70 paquets perdus par
+  compte et par jour » — **est fausse**, et la mesure du 06/09 la réfute
+  (voir « Le plafond d'ouverture » plus haut). On ne peut pas consommer
+  le quota en rafale, puisqu'il vaut exactement la régénération et que le
+  stock plafonne à 10. Baisser `--count` n'a rien changé au débit ; ça a
+  seulement arrêté de gaspiller des appels en 429.
 - **Le quota Actions n'est plus une contrainte : le dépôt est public**, donc
   les minutes sont gratuites et illimitées. L'arithmétique reste bonne à
   connaître si le dépôt redevenait privé — à 50 min de cadence, la défausse
