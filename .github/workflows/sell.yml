@@ -27,7 +27,30 @@ name: Mise en vente UR/L (9 comptes)
 # entre-temps par un autre workflow, avec un refresh token deja consomme a
 # la cle -- ce qui revoque la session (cf wm_session_io.py).
 #
-# CADENCE : TOUTES LES HEURES depuis le 04/09/2026, contre 3 h avant.
+# CADENCE : LE MOTIF DE 50 MIN DES AUTRES WORKFLOWS depuis le 06/09/2026.
+#
+# Le passage a "50 * * * *" (une ligne, toutes les heures) n'a PAS donne
+# un run par heure. Compte sur 13 h, du 05/09 18:00Z au 06/09 07:00Z :
+#
+#     boosters (6 lignes cron)  12 runs
+#     defausse (6 lignes cron)  12 runs
+#     vente    (1 ligne cron)    5 runs   <- sur 13 attendus
+#
+# et les runs obtenus tombaient a 06:30, 01:20, 23:20, 21:43, 19:32,
+# 16:56 : jamais a la minute 50, avec des trous de 2 a 5 h. GitHub
+# documente que l'evenement schedule peut etre retarde ou abandonne en
+# periode de charge ; empiriquement, les deux workflows a six lignes s'en
+# sortent deux fois mieux que celui a une seule. On s'aligne donc sur le
+# motif qui marche plutot que de demander plus souvent.
+#
+# Ce que ca coute : rien (depot public). Ce que ca rapporte : les
+# emplacements d'enchere ne dorment plus. Le 06/09 a 06:38, sept comptes
+# sur huit etaient a 0 annonce sur 5, faute de passage depuis 01:20.
+#
+# HISTORIQUE. Avant le 04/09 la cadence etait de 3 h, sur l'idee qu'une
+# annonce durant 6 h, un emplacement ne se libere pas plus vite. C'est
+# faux : les cinq emplacements d'un compte n'expirent pas ensemble, ils se
+# liberent un par un, a n'importe quelle heure.
 #
 # Le raisonnement d'origine etait qu'une annonce durant 6 h, un emplacement
 # ne se libere pas plus vite, donc passer souvent ne servirait a rien. Il
@@ -41,19 +64,23 @@ name: Mise en vente UR/L (9 comptes)
 # alors 0 annonce sur 5 : ses cinq emplacements sont restes vides toute la
 # duree de l'attente. A l'heure, un creneau rate coute au pire une heure.
 #
-# Le cout est nul (depot public, minutes gratuites) et le run dure ~4 min.
 # Effet de bord assume et souhaitable : GitHub n'autorise qu'un seul run en
 # attente par groupe de concurrence, donc un run de vente encore en file
 # est remplace par le suivant. C'est le bon comportement -- on veut l'etat
 # du marche le plus recent, pas une commande vieille de trois heures.
-#
-# La minute 50 est choisie a l'ecart des autres workflows (boosters aux
-# minutes 0/10/20/30/40, defausse a +5, trade a +25) : ca ne supprime pas
-# la mise en file, ca la raccourcit.
 
 on:
   schedule:
-    - cron: "50 * * * *"
+    # Meme motif de 50 min que boosters.yml et discard.yml, decale de
+    # +15 min sur l'ouverture (donc +10 sur la defausse, qui a le temps de
+    # finir). Six lignes parce que 50 ne divise pas 60 et que */50 est
+    # invalide sur le champ des minutes ; le motif se referme au bout de 5 h.
+    - cron: "15 0,5,10,15,20 * * *"
+    - cron: "25 4,9,14,19 * * *"
+    - cron: "35 3,8,13,18,23 * * *"
+    - cron: "45 2,7,12,17,22 * * *"
+    - cron: "55 1,6,11,16,21 * * *"
+    - cron: "5 1,6,11,16,21 * * *"
   workflow_dispatch:
     inputs:
       dry_run:

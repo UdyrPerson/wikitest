@@ -148,16 +148,22 @@ PRIX_PLANCHER = 10
 # emplacement, jamais la valeur de la carte.
 FACTEUR_DESCENTE = 1.2
 
-# Duree raccourcie des le SECOND passage d'une carte en descente : une
-# carte qui n'est pas partie au prix fort n'a pas besoin d'immobiliser un
-# emplacement six heures de plus pour le verifier a un prix plus bas.
+# Duree des le SECOND passage d'une carte en descente. Elle a valu 3 h,
+# pour liquider deux fois plus vite qu'en 6 h. ANNULE LE 06/09/2026 : ce
+# raisonnement suppose qu'un emplacement libere est repris tout de suite.
+# Mesure sur les runs du 05 au 06/09 : les passages de vente tombent en
+# moyenne toutes les 2 h 30, avec des trous jusqu'a 5 h 10. Une annonce de
+# 3 h expire donc bien avant le passage suivant et l'emplacement dort --
+# le contraire de ce qu'on cherchait.
 #
-# A noter : ca ne repousse PAS la limite des 50 annonces d'historique, qui
-# se compte en nombre d'annonces et non en temps -- des encheres deux fois
-# plus courtes remplissent la fenetre deux fois plus vite. Une carte pourra
-# toujours enchainer une dizaine de descentes avant d'etre oubliee. Le gain
-# est ailleurs : on liquide deux fois plus vite en temps reel.
-DUREE_DESCENTE = 180  # 3 h
+# Regle a retenir : une duree d'enchere plus courte que l'intervalle entre
+# deux passages ne liquide pas plus vite, elle cree du temps mort. On
+# repassera a 180 si la cadence redevient fiable a l'heure.
+DUREE_DESCENTE = 360  # 6 h
+
+# Niveau de priorite des cartes repechees (cf prix_secours) : apres tout
+# le reste, uniquement pour ne pas laisser un emplacement vide.
+NIVEAU_SECOURS = 3
 
 # En dessous de ce prix, on renonce a vendre la carte : elle n'est pas
 # listee du tout. Un emplacement occupe par une carte a 150 wb est un
@@ -287,6 +293,33 @@ def prix_degressif(fiche, dernier_demande):
             else prix_suivant(fiche, dernier_demande))
 
 
+def prix_secours(fiche, dernier_demande):
+    """Prix d'une carte repechee pour occuper un emplacement vide.
+
+    Meme calcul que le chemin normal, mais avec le seul plancher RELATIF :
+    on retire le seuil absolu PRIX_ABANDON, qui n'a de sens que lorsqu'un
+    meilleur candidat attend l'emplacement. Le plancher relatif
+    (FRACTION_PLANCHER x mediane) reste, donc une carte chere n'est jamais
+    bradee -- on descend juste plus bas sur les cartes bon marche.
+
+    Une carte deja arrivee au plancher y reste : elle est reproposee au
+    meme prix tant que l'emplacement n'interesse personne d'autre. C'est
+    voulu, ce prix EST son prix de reserve.
+
+    Deux plafonds, parce que le plancher relatif peut se retrouver AU-DESSUS
+    du dernier prix demande (table de reference reconstruite entre-temps,
+    ou annonce posee par une version anterieure). Sans eux, une carte
+    invendue a 210 serait remise a 300 : on remonterait le prix d'une carte
+    dont personne n'a voulu, et on demanderait plus qu'elle n'a jamais valu.
+    On ne depasse donc jamais le dernier prix demande, ni le maximum observe
+    pour une premiere mise en vente.
+    """
+    plancher = max(PRIX_PLANCHER, int((fiche.get("med") or 0) * FRACTION_PLANCHER))
+    plafond = int(fiche["max"]) if dernier_demande is None else int(dernier_demande)
+    vise = plafond if dernier_demande is None else int(plafond / FACTEUR_DESCENTE)
+    return min(plafond, max(vise, plancher))
+
+
 def prix_initial_degressif(fiche):
     """Premiere mise a prix d'une carte erratique : son maximum observe."""
     plancher = plancher_carte(fiche)
@@ -344,6 +377,7 @@ def candidats(rows, ref, exclues, derniers=None, rang_rarete=0, dispersion_max=D
         fiable = fiche["n"] >= N_MIN and dispersion <= dispersion_max
 
         deja_vue = derniers.get(cid)
+        niveau = 1 if fiable else 2
         if deja_vue is not None:
             # Deja proposee sans preneur : on baisse d'un cran, que la carte
             # soit fiable ou non. Avant le 04/09/2026 seules les cartes
@@ -354,6 +388,21 @@ def candidats(rows, ref, exclues, derniers=None, rang_rarete=0, dispersion_max=D
             demande = int(round(fiche["moy"] * MARGE))
         else:
             demande = prix_initial_degressif(fiche)
+
+        # REPECHAGE. Les deux fonctions ci-dessus renoncent quand le prix
+        # tombe sous PRIX_ABANDON. Ce seuil suppose qu'un meilleur candidat
+        # attend l'emplacement -- vrai sur les comptes fournis, faux sur les
+        # autres : le 06/09/2026 a 06:38, le compte 7 avait 5 emplacements
+        # libres et 0 candidat, le compte 8 en avait 4 libres pour 1
+        # candidat. Un emplacement vide rapporte zero, ce qui est pire que
+        # n'importe quelle vente. Ces cartes reviennent donc en niveau 3,
+        # servies UNIQUEMENT s'il reste de la place apres les autres, et au
+        # plancher relatif -- qui continue, lui, de proteger les cartes
+        # cheres d'etre bradees.
+        if not demande or demande <= 0:
+            demande = prix_secours(fiche, deja_vue)
+            niveau = NIVEAU_SECOURS
+
         # Des le second passage on raccourcit : inutile d'immobiliser six
         # heures pour reverifier un prix plus bas.
         duree_carte = DUREE_DESCENTE if deja_vue is not None else None
@@ -370,7 +419,7 @@ def candidats(rows, ref, exclues, derniers=None, rang_rarete=0, dispersion_max=D
             "moyenne": fiche["moy"],
             "dispersion": dispersion,
             "rang_rarete": rang_rarete,
-            "niveau": 1 if fiable else 2,
+            "niveau": niveau,
             "demande": demande,
             "duree": duree_carte,       # None = duree par defaut du run
             "p_vente": proba_vente(fiche["prix"], demande),
@@ -598,8 +647,10 @@ def main():
                 seuil = DISPERSION_MAX.get(rarete, DISPERSION_DEFAUT)
                 cands = candidats(rows, ref, exclues, derniers, rang, seuil)
                 n1 = sum(1 for c in cands if c["niveau"] == 1)
+                n3 = sum(1 for c in cands if c["niveau"] == NIVEAU_SECOURS)
                 print(f"## {rarete} — {len(rows)} possession(s), "
-                      f"{n1} fiable(s) + {len(cands) - n1} en enchere degressive")
+                      f"{n1} fiable(s) + {len(cands) - n1 - n3} en enchere degressive"
+                      + (f" + {n3} repechee(s)" if n3 else ""))
                 tous += cands
 
             if not tous:

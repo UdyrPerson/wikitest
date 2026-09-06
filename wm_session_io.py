@@ -70,18 +70,37 @@ def identite(state_path):
     ne se relit pas. Les deux comptes ont alors tourne sous la meme
     identite, chacun ecrivant le jeton tourne de l'autre : exactement le
     motif de reutilisation de refresh token qui revoque les sessions."""
+    return (_jeton(state_path).get("user") or {}).get("user_metadata", {}).get("username")
+
+
+def identifiant(state_path):
+    """UUID du compte porte par un fichier de session, ou None.
+
+    Meme lecture hors ligne qu'identite(), mais sur user.id plutot que sur
+    le pseudo. Le site n'expose aucun endpoint de recherche d'utilisateur :
+    l'UUID est la seule cle stable dont on dispose pour se reconnaitre dans
+    les reponses du marche (current_bidder_id, seller_id)."""
+    return (_jeton(state_path).get("user") or {}).get("id")
+
+
+def _jeton(state_path) -> dict:
+    """Charge utile du jeton Supabase porte par un fichier de session.
+
+    Le cookie d'auth est decoupe en morceaux numerotes (...auth-token.0,
+    .1, ...) : on les recolle dans l'ordre du nom avant de decoder. Renvoie
+    un dictionnaire vide plutot que de lever, tous les appelants traitant
+    l'absence comme un cas normal (session vide ou revoquee)."""
     try:
         data = json.loads(Path(state_path).read_text(encoding="utf-8"))
         chunks = {c["name"]: c["value"] for c in data.get("cookies", []) if "auth-token" in c["name"]}
         if not chunks:
-            return None
+            return {}
         raw = "".join(chunks[k] for k in sorted(chunks))
         if raw.startswith("base64-"):
             raw = raw[7:]
-        payload = json.loads(base64.b64decode(raw + "=" * (-len(raw) % 4)))
-        return ((payload.get("user") or {}).get("user_metadata") or {}).get("username")
+        return json.loads(base64.b64decode(raw + "=" * (-len(raw) % 4))) or {}
     except Exception:
-        return None
+        return {}
 
 
 def ensure_fresh(playwright, state_path, base_url):
