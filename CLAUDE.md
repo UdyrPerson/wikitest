@@ -261,7 +261,7 @@ les mettre en concurrence.
 | `boosters.yml` | 50 min, minutes 0/10/20/30/40 | Les 9 comptes en **séquentiel dans un seul job**, `--count 10` chacun (voir la limite quotidienne) |
 | `discard.yml` | 50 min, +5 min | Défausse `C,PC,R,SR` sur les 9 comptes |
 | `trade.yml` | **1 jour**, 00:58 UTC | Les 8 émetteurs offrent leur solde, puis le collecteur accepte tout (voir la limite de 50 échanges/jour) |
-| `sell.yml` | 1 h, minute 50 | Met en vente les meilleures **UR et L** des 9 comptes. Entrée `dry_run` (vraie par défaut en manuel), `rarities` pour restreindre |
+| `sell.yml` | 50 min, +15 min | Met en vente les meilleures **UR et L** des 9 comptes. Entrée `dry_run` (vraie par défaut en manuel), `rarities` pour restreindre |
 | `report-rares.yml` | manuel | Lecture seule, rapport dans le résumé du run |
 
 Trois choses à savoir avant d'y toucher :
@@ -280,6 +280,29 @@ dans le temps.
 
 **`continue-on-error` sur chaque compte.** Sans ça, le premier 401 arrêtait le
 job et les comptes suivants n'étaient jamais traités.
+
+**Un cron demandé n'est pas un cron obtenu.** GitHub documente que
+l'événement `schedule` peut être retardé ou abandonné en période de charge,
+et l'écart est mesurable. Sur 13 h, du 05/09 18:00Z au 06/09 07:00Z :
+
+| Workflow | Lignes cron | Runs obtenus |
+|---|---|---|
+| `boosters` | 6 | 12 |
+| `discard` | 6 | 12 |
+| `sell` (`50 * * * *`) | 1 | **5** sur 13 attendus |
+
+Et les cinq runs de vente sont tombés à 06:30, 01:20, 23:20, 21:43, 19:32 —
+jamais à la minute demandée, avec des trous de 2 à 5 h. Conséquence directe :
+le 06/09 à 06:38, **sept comptes sur huit étaient à 0 annonce sur 5**, faute
+de passage depuis 01:20. La leçon est de s'aligner sur le motif à six lignes
+qui marche, pas de demander plus souvent — `sell.yml` l'a adopté avec un
+décalage de +15 min sur l'ouverture.
+
+Corollaire pour la durée des enchères : **une annonce plus courte que
+l'intervalle entre deux passages ne liquide pas plus vite, elle crée du
+temps mort.** `DUREE_DESCENTE` valait 3 h pour accélérer les descentes ;
+c'était supposer qu'un emplacement libéré est repris aussitôt. Repassée à
+6 h le 06/09.
 
 **Tous les workflows partagent le groupe de concurrence `wm-sessions`**, et
 c'est vital. Ils chargent les mêmes neuf secrets au démarrage et les
@@ -351,7 +374,7 @@ Table de référence des prix (produite depuis le compte premium) :
   réelles. Médiane des médianes : **688,75 wb** ;
 - rareté **UR** : en cours, 12 257 cartes au catalogue.
 
-**La vente tourne en production sur les 9 comptes** (04/09/2026), 3
+**La vente tourne en production sur les 9 comptes** (04/09/2026), 5
 emplacements chacun, cycles de 6 h.
 
 Premier bilan réel, après un cycle :
@@ -373,6 +396,24 @@ médianes **80 wb** contre 688,75 pour les L, dispersion médiane 1,30 contre
 C'est pourquoi **la rareté prime sur le niveau** dans le classement : sans
 ça, une UR fiable à 85 wb passerait devant une L non fiable à 2750 et
 stopperait sa descente.
+
+**Trois niveaux de priorité, pas deux** (06/09/2026). Le niveau 1 est la
+carte dont la moyenne est fiable, le niveau 2 l'enchère dégressive. Le
+**niveau 3 est le repêchage** : les cartes que `PRIX_ABANDON` (200 wb)
+écartait au motif qu'« un emplacement vaut mieux qu'une vente à 150 ». Ce
+raisonnement ne tient que si un meilleur candidat attend l'emplacement — à
+06:38 le compte 7 avait 5 emplacements libres et **0** candidat, le compte
+8 en avait 4 pour 1. Un emplacement vide rapporte zéro, ce qui est pire que
+n'importe quelle vente. Ces cartes sont donc servies en dernier, seulement
+s'il reste de la place, au plancher **relatif** (`FRACTION_PLANCHER` ×
+médiane) qui continue de protéger les cartes chères. Deux plafonds : on ne
+demande jamais plus que le dernier prix refusé, ni plus que le maximum
+jamais atteint — sans quoi une carte invendue à 210 serait remise à 300.
+
+Effet mesuré immédiatement : **40 annonces actives sur 45 emplacements**
+contre 23 au passage précédent. Les 5 manquantes sont sur les comptes
+récents, qui ne possèdent pas encore assez d'UR/L — un problème de stock,
+pas de stratégie.
 
 Historique : la vente a d'abord été testée à la main (03/09/2026, deux
 annonces) :
