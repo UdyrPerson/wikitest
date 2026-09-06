@@ -65,7 +65,20 @@ FICHIER_COMPTES = Path("comptes_crees.txt")
 # Le mail de confirmation a mis ~90 s a arriver lors de l'essai du
 # 07/09/2026. On laisse largement de quoi encaisser une file d'attente.
 ATTENTE_ADRESSE_S = 90
-ATTENTE_CODE_S = 300
+ATTENTE_CODE_S = 420
+
+# Espacement entre deux consultations de la boite. A 10 s et par
+# rechargement complet, quatre processus ont fait tomber un 429 sur
+# temp-mail.org. Le service le dit lui-meme : « If you are using our
+# website frequently or for automated tasks, please use our Premium or
+# API. » On reste donc tres en dessous.
+INTERVALLE_BOITE_S = 20
+
+# Bouton de rafraichissement de la boite (barre « Copier / Actualiser /
+# Retour / Supprimer »). Plusieurs formes acceptees : le site a change de
+# balise par le passe.
+SEL_ACTUALISER = ("#click-to-refresh, button:has-text('Actualiser'), "
+                  "a:has-text('Actualiser')")
 
 
 def mot_de_passe(n: int = 20) -> str:
@@ -76,9 +89,25 @@ def mot_de_passe(n: int = 20) -> str:
     return "Wm" + corps + "7!"
 
 
+def rate_limite(page) -> bool:
+    """temp-mail.org repond-il 429 ? Il sert une page d'erreur en clair."""
+    try:
+        return "429" in page.title() or "rate limited" in page.evaluate(
+            "() => document.body.innerText").lower()
+    except Exception:
+        return False
+
+
 def adresse_jetable(page) -> str:
     """Adresse fournie par temp-mail.org, une fois le champ rempli."""
     page.goto(TEMP_MAIL, wait_until="domcontentloaded")
+    page.wait_for_timeout(3000)
+    if rate_limite(page):
+        raise SystemExit(
+            "temp-mail.org repond 429 (trop de requetes depuis cette IP). "
+            "Rien a corriger dans le script : il faut attendre que la limite "
+            "retombe. Voir INTERVALLE_BOITE_S."
+        )
     limite = time.time() + ATTENTE_ADRESSE_S
     while time.time() < limite:
         try:
@@ -151,12 +180,33 @@ def inscrire(page, pseudo: str, email: str, mdp: str) -> None:
         raise SystemExit(f"Ecran inattendu apres l'inscription :\n{texte[:400]}")
 
 
-def code_de_verification(page) -> str:
-    """Ouvre le message de WikiMasters et en extrait le code a 6 chiffres."""
+def code_de_verification(page, ctx, adresse: str) -> str:
+    """Attend le message de WikiMasters et en extrait le code a 6 chiffres.
+
+    NE RECHARGE JAMAIS LA PAGE. La premiere version faisait un
+    `goto(TEMP_MAIL)` a chaque tour, toutes les dix secondes : quatre
+    processus en parallele pendant cinq minutes, ca fait ~120 chargements
+    complets, et temp-mail.org a fini par repondre 429 « You are being rate
+    limited » (07/09/2026). Le champ de l'adresse disparaissait alors de la
+    page, le courrier arrivait dans une boite qu'on ne lisait plus, et
+    quatre comptes ont ete crees sans pouvoir etre verifies.
+
+    On utilise donc le bouton « Actualiser » du site, qui rafraichit la
+    boite en AJAX sans recharger, et on espace les tours.
+    """
     limite = time.time() + ATTENTE_CODE_S
     while time.time() < limite:
-        page.goto(TEMP_MAIL, wait_until="domcontentloaded")
+        try:
+            page.locator(SEL_ACTUALISER).first.click(timeout=5000)
+        except Exception:
+            pass
         page.wait_for_timeout(4000)
+
+        if rate_limite(page):
+            raise SystemExit(
+                "temp-mail.org repond 429 en pleine attente du code. Le compte "
+                f"est cree mais non verifie : {adresse}"
+            )
         # Plusieurs a.viewLink pointent le meme message et le premier porte
         # href="javascript:void(0)" : on ne garde que les vraies URL.
         lien = page.evaluate("""() => {
@@ -172,17 +222,41 @@ def code_de_verification(page) -> str:
             if trouves:
                 return trouves[0]
         reste = int(limite - time.time())
+        # Un « pas encore arrive » repete ne dit pas POURQUOI. Toutes les
+        # cinq tentatives, on montre l'etat reel de la boite : si l'adresse
+        # affichee n'est plus celle qui a servi a s'inscrire, le courrier
+        # part dans une boite qu'on ne regarde plus -- ce n'est pas une
+        # question de patience.
+        if int(reste) % 60 < INTERVALLE_BOITE_S:
+            try:
+                courante = page.locator("#mail").first.input_value(timeout=3000).strip()
+            except Exception:
+                courante = "(illisible)"
+            marque = "" if courante == adresse else "  <- CHANGE, le courrier part ailleurs"
+            print(f"  boite surveillee : {courante}{marque}")
         print(f"  message pas encore arrive ({reste} s restantes)")
-        page.wait_for_timeout(random.uniform(8000, 12000))
+        page.wait_for_timeout(random.uniform(INTERVALLE_BOITE_S * 1000,
+                                              INTERVALLE_BOITE_S * 1500))
     raise SystemExit("Aucun code recu dans le delai imparti.")
 
 
-def enregistrer(pseudo: str, email: str, mdp: str, statut: str) -> None:
+def enregistrer(fichier: Path, pseudo: str, email: str, mdp: str, statut: str) -> None:
+    """Ajoute une ligne d'identifiants, en creant l'en-tete au besoin.
+
+    Ecrit DEUX fois par compte -- une fois le compte cree, une fois le code
+    valide. C'est voulu : si le processus meurt entre les deux (code jamais
+    recu, verification refusee), le mot de passe est deja sur le disque et
+    le compte reste recuperable a la main.
+
+    Le fichier est parametrable pour que plusieurs inscriptions lancees en
+    parallele n'ecrivent pas dans le meme : deux `write` concurrents sur le
+    meme descripteur peuvent s'entrelacer. On fusionne apres coup.
+    """
     entete = ("# Comptes WikiMasters crees automatiquement (wm_signup.py).\n"
               "# Couvert par le .gitignore : le depot est PUBLIC.\n\n")
-    if not FICHIER_COMPTES.exists():
-        FICHIER_COMPTES.write_text(entete, encoding="utf-8")
-    with FICHIER_COMPTES.open("a", encoding="utf-8") as f:
+    if not fichier.exists():
+        fichier.write_text(entete, encoding="utf-8")
+    with fichier.open("a", encoding="utf-8") as f:
         f.write(f"[{datetime.now():%Y-%m-%d %H:%M}] pseudo={pseudo}  "
                 f"email={email}  mdp={mdp}  statut={statut}\n")
 
@@ -192,7 +266,10 @@ def main():
     ap.add_argument("--state", help="fichier de session a ecrire une fois le compte actif")
     ap.add_argument("--headless", action="store_true",
                     help="sans affichage (impose sur un runner)")
+    ap.add_argument("--fichier", default=str(FICHIER_COMPTES),
+                    help="ou ecrire les identifiants (un par processus si parallele)")
     args = ap.parse_args()
+    fichier = Path(args.fichier)
 
     sans_ecran = args.headless or os.environ.get("CI") == "true"
 
@@ -215,11 +292,11 @@ def main():
 
         print("2/4  inscription...")
         inscrire(onglet_site, pseudo, email, mdp)
-        enregistrer(pseudo, email, mdp, "code-attendu")
+        enregistrer(fichier, pseudo, email, mdp, "code-attendu")
         print("     compte cree, code demande")
 
         print("3/4  recuperation du code...")
-        code = code_de_verification(onglet_mail)
+        code = code_de_verification(onglet_mail, ctx, email)
         print(f"     code recu ({len(code)} chiffres)")
 
         print("4/4  verification...")
@@ -229,7 +306,8 @@ def main():
         onglet_site.wait_for_timeout(8000)
 
         actif = "/signup" not in onglet_site.url
-        enregistrer(pseudo, email, mdp, "verifie" if actif else "ECHEC-verification")
+        enregistrer(fichier, pseudo, email, mdp,
+                    "verifie" if actif else "ECHEC-verification")
         print(f"     {'compte actif' if actif else 'verification refusee'} — {onglet_site.url}")
 
         if actif and args.state:
@@ -242,7 +320,7 @@ def main():
     # de run sont lisibles par tout le monde.
     print(f"\nPseudo  : {pseudo}")
     print(f"Email   : {email}")
-    print(f"Mot de passe : dans {FICHIER_COMPTES} (non imprime ici)")
+    print(f"Mot de passe : dans {fichier} (non imprime ici)")
     if not actif:
         sys.exit(1)
 
