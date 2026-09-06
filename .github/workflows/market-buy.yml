@@ -24,33 +24,38 @@ name: Rachat des encheres du vendeur suivi
 # positionne, le script saute l'enchere au lieu de surencherir. C'est la
 # consigne, et c'est ce qui borne la depense.
 #
-# CADENCE : LE POINT FAIBLE CONNU
+# DECLENCHEMENT MANUEL UNIQUEMENT, ET C'EST UN CHOIX MESURE
 #
-# Une enchere de 10 minutes n'est PAS garantie d'etre vue. GitHub ne
-# promet pas l'heure d'un cron -- les runs planifies partent regulierement
-# avec 5 a 20 min de retard quand les runners sont charges -- et ce
-# workflow partage le verrou wm-sessions avec les quatre autres, donc il
-# attend son tour.
+# Ce workflow a d'abord tourne en cron */10. Mesure sur 8 h le 06/09/2026,
+# en comptant les evenements schedule reellement recus :
 #
-# Le remede est du cote vendeur, pas ici : poster des encheres d'au moins
-# 30 minutes les rend rattrapables. La duree de 10 min observee le
-# 06/09/2026 est le pire cas.
+#     ouverture (6 lignes cron)   11 runs sur 10 attendus   115 %
+#     defausse  (6 lignes cron)   10 runs sur 10 attendus   104 %
+#     vente     (6 lignes cron)    4 runs sur 10 attendus    42 %
+#     rachat    (*/10)             1 run  sur 48 attendus     2 %
 #
-# Pourquoi */10 et pas */5 : chaque run occupe le verrou wm-sessions une
-# minute et demie environ (checkout, pip, balayage). A */5 cela ferait 30 %
-# du temps, et comme un run en attente en annule un autre en attente, la
-# course finirait par manger des runs d'ouverture ou de defausse -- le
-# coeur du projet. A */10 l'occupation retombe vers 15 %.
+# GitHub deprioritise massivement les crons courts : le rachat partait une
+# fois toutes les huit heures, pas toutes les dix minutes. Aucune cadence
+# de 10 min n'est atteignable ici, quoi qu'on ecrive dans le fichier -- et
+# une enchere de 10 minutes ne sera donc jamais rattrapee par un cron.
+#
+# Plutot que d'entretenir l'illusion d'un rachat automatique qui ne part
+# presque jamais, le workflow est explicitement manuel : on le lance quand
+# on sait qu'il y a quelque chose a racheter. Un declenchement manuel
+# part immediatement, lui.
+#
+# dry_run est donc FAUX par defaut : chaque lancement est deliberé, et
+# une simulation qui n'achete rien serait la mauvaise surprise (constatee
+# le 06/09/2026, ou un lancement a l'air d'avoir echoue alors qu'il avait
+# seulement simule). Coche la case pour simuler.
 
 on:
-  schedule:
-    - cron: "*/10 * * * *"
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Simulation seule (aucune mise posee)"
+        description: "Simulation seule (ne mise pas, montre ce qui serait achete)"
         type: boolean
-        default: true
+        default: false
       complet:
         description: "Balayer tout le marche au lieu de la fenetre recente"
         type: boolean
@@ -94,17 +99,18 @@ jobs:
           WM_TEST3_STORAGE_STATE: ${{ secrets.WM_TEST3_STORAGE_STATE }}
         run: python -c "import os, pathlib; pathlib.Path('state3.json').write_text(os.environ['WM_TEST3_STORAGE_STATE'])"
 
-      # Meme raisonnement que dans sell.yml : inputs.dry_run est la chaine
-      # vide sur un declenchement planifie, donc un test naif basculerait
-      # sur le cas faux et un run automatique ne miserait jamais. On exige
-      # explicitement l'evenement workflow_dispatch.
+      # Le workflow etant purement manuel, inputs.dry_run est toujours
+      # renseigne : pas besoin du garde-fou sur github.event_name qu'ont
+      # sell.yml et consorts, ou la chaine vide d'un run planifie ferait
+      # basculer un test naif sur le mauvais cas.
       - name: Choisit simulation ou mise reelle
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.dry_run }}" = "true" ]; then
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
             echo "GO=" >> "$GITHUB_ENV"
-            echo "Mode simulation (declenchement manuel, dry_run coche)."
+            echo "Mode simulation : aucune mise ne sera posee."
           else
             echo "GO=--go" >> "$GITHUB_ENV"
+            echo "Mode reel : les encheres du vendeur suivi seront rachetees."
           fi
           if [ "${{ inputs.complet }}" = "true" ]; then
             echo "COMPLET=--complet" >> "$GITHUB_ENV"
@@ -140,10 +146,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
         run: gh secret set WM_TEST3_STORAGE_STATE --repo ${{ github.repository }} < state3.json
 
-      # Le job tourne sans personne devant : un echec silencieux passerait
-      # inapercu pendant des heures. Comme les trois autres workflows
-      # planifies, on rougit franchement et on donne la commande de
-      # reparation.
+      # On rougit franchement, contrairement a report-rares qui est manuel
+      # lui aussi : la difference est qu'ici l'echec veut dire « le rachat
+      # n'a pas eu lieu », ce qui appelle une action immediate. Un rapport
+      # de lecture rate se relance, une enchere manquee expire.
       - name: Signale l'echec du collecteur
         if: steps.buy.outcome != 'success'
         run: |

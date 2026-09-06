@@ -300,20 +300,43 @@ les mettre en concurrence.
 | `discard.yml` | 50 min, +5 min | Défausse `C,PC,R,SR` sur les 9 comptes |
 | `trade.yml` | **1 jour**, 00:58 UTC | Les 8 émetteurs offrent leur solde, puis le collecteur accepte tout (voir la limite de 50 échanges/jour) |
 | `sell.yml` | 50 min, +15 min | Met en vente les meilleures **UR et L** des 9 comptes. Entrée `dry_run` (vraie par défaut en manuel), `rarities` pour restreindre |
-| `market-buy.yml` | **10 min** | Le collecteur rachète au prix demandé les enchères du vendeur suivi (`WM_MARKET_SELLER`). Entrées `dry_run`, `complet`, `fenetre_min`, `max_depense` |
+| `market-buy.yml` | **manuel** | Le collecteur rachète au prix demandé les enchères du vendeur suivi (`WM_MARKET_SELLER`). `dry_run` **faux** par défaut, plus `complet`, `fenetre_min`, `max_depense` |
 | `report-rares.yml` | manuel | Lecture seule, rapport dans le résumé du run |
 
 Quatre choses à savoir avant d'y toucher :
 
-**`market-buy.yml` est le seul à 10 min, et c'est déjà un compromis.** Il
-court après des enchères qui peuvent ne durer que 10 minutes, donc il
-voudrait tourner plus souvent. Mais chaque run occupe le verrou
-`wm-sessions` environ une minute et demie : à `*/5` cela ferait 30 % du
-temps, et comme un run en attente en annule un autre en attente, la course
-finirait par manger des runs d'ouverture ou de défausse. Le vrai remède est
-côté vendeur — **poster des enchères d'au moins 30 minutes** les rend
-rattrapables. GitHub ne promet de toute façon pas l'heure d'un cron : 5 à
-20 min de retard sont courants quand les runners sont chargés.
+**`market-buy.yml` est manuel, et ce n'est pas un oubli.** Il a d'abord
+tourné en `*/10`. Mesure sur 8 h le 06/09/2026, en comptant les
+événements `schedule` réellement reçus :
+
+| Workflow | Motif | Obtenus | Attendus | Taux |
+|---|---|---|---|---|
+| `boosters` | 6 lignes | 11 | 10 | **115 %** |
+| `discard` | 6 lignes | 10 | 10 | **104 %** |
+| `sell` | 6 lignes | 4 | 10 | 42 % |
+| `market-buy` | `*/10` | **1** | **48** | **2 %** |
+
+**GitHub déprioritise massivement les crons courts** : le rachat partait
+une fois toutes les huit heures, pas toutes les dix minutes. Aucune
+cadence de 10 min n'est atteignable, quoi qu'on écrive — une enchère de
+10 minutes ne sera donc jamais rattrapée par un cron. Plutôt que
+d'entretenir un automatisme qui ne part presque jamais, on le lance à la
+main quand on sait qu'il y a quelque chose à racheter ; un déclenchement
+manuel part immédiatement, lui.
+
+Noter aussi que le motif à 6 lignes n'est pas une garantie en soi :
+`sell` l'utilise et n'obtient que 42 %, sans explication vérifiable de
+l'écart avec `boosters` et `discard`. Et un **trou global de 94 min**
+(09:43 → 11:17 UTC) a touché tous les workflows le même jour : c'est
+l'ordonnanceur de GitHub, pas le dépôt.
+
+**Le défaut de timeout de Playwright est de 30 s, et c'est trop court.**
+La défausse du compte 4 est morte le 06/09/2026 sur un `TimeoutError` en
+plein `POST /api/user-cards/bulk-discard` — pas une session révoquée,
+contrairement à ce qu'annonçait le résumé du run. Tous les appels
+d'écriture sont désormais à 90 s. Le pire cas est `/api/packs/open` : un
+timeout y ouvre le paquet côté serveur, révèle ses cartes et décrémente
+le stock, mais on perd la réponse qui les portait — rien ne les rattrape.
 
 
 **La cadence de 50 min n'est pas un chiffre rond par hasard.** Le jeton
