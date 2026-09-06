@@ -1,0 +1,126 @@
+name: Creation d'un compte WikiMasters
+
+# Cree une adresse jetable, inscrit un compte WikiMasters dessus, va
+# chercher le code de verification dans cette boite et active le compte.
+# Tout est dans wm_signup.py, verifie de bout en bout en local le
+# 07/09/2026 (compte jipise8650).
+#
+# DECLENCHEMENT MANUEL, ET SEULEMENT MANUEL. Aucun cron : creer des
+# comptes n'est pas une tache de fond, ca se fait quand on en veut un.
+#
+# CE WORKFLOW A DE FORTES CHANCES D'ECHOUER SUR UN RUNNER GITHUB, et
+# c'est documente plutot que cache. Deux protections anti-datacenter se
+# dressent sur le chemin :
+#
+#   - Cloudflare Turnstile sur /signup. C'est exactement ce qui a fait
+#     supprimer refresh-sessions.yml le 03/09/2026 (commit 423102a) : la
+#     meme connexion passe en local dans un vrai Chrome sur IP
+#     residentielle, et echoue systematiquement depuis un runner.
+#   - temp-mail.org, qui filtre lui aussi les IP de datacenter.
+#
+# Le script distingue les deux cas dans son message d'erreur, pour qu'un
+# echec dise LEQUEL des deux a bloque plutot que « ca n'a pas marche ».
+#
+# Si ca echoue, la meme commande marche en local :
+#     python wm_signup.py --state storage_state_10.json
+#
+# NAVIGATEUR REEL REQUIS. Contrairement aux autres workflows du projet,
+# qui n'installent Playwright que pour son client HTTP, celui-ci pilote
+# une vraie page : il faut donc `playwright install chromium` (~1 min).
+#
+# RIEN DE SECRET DANS LES LOGS. Le depot est public, donc les logs et les
+# artefacts de run le sont aussi. Le script imprime le pseudo et l'email,
+# jamais le mot de passe ; celui-ci part dans un secret du depot, qui ne
+# se relit pas. Recupere-le avec wm_session_repair.py, ou refais une
+# session en local.
+
+on:
+  workflow_dispatch:
+    inputs:
+      secret_session:
+        description: "Secret ou ecrire la session (vide = ne pas pousser)"
+        required: false
+        default: ""
+      secret_mdp:
+        description: "Secret ou ecrire le mot de passe (vide = ne pas pousser)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+# MEME GROUPE QUE LES AUTRES WORKFLOWS. Ce workflow ne touche a aucune
+# session existante, donc le risque de rotation croisee decrit dans
+# CLAUDE.md ne s'applique pas ici. Mais il ecrit potentiellement un
+# secret, et il dure plusieurs minutes : le laisser tourner en parallele
+# n'apporterait rien et brouillerait la lecture des runs.
+concurrency:
+  group: wm-sessions
+  cancel-in-progress: false
+
+jobs:
+  signup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Installe Playwright AVEC son navigateur
+        run: |
+          pip install playwright
+          playwright install --with-deps chromium
+
+      - name: Cree le compte et le verifie
+        id: creation
+        run: python wm_signup.py --headless --state nouvelle_session.json
+
+      - name: Pousse la session dans son secret
+        if: success() && inputs.secret_session != ''
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh secret set "${{ inputs.secret_session }}" --repo ${{ github.repository }} < nouvelle_session.json
+
+      # Le mot de passe vit dans comptes_crees.txt, que le script vient
+      # d'ecrire sur le runner. On l'extrait de la derniere ligne et on le
+      # pousse tel quel : `gh secret set` lit son stdin, rien n'apparait
+      # dans le log.
+      - name: Pousse le mot de passe dans son secret
+        if: success() && inputs.secret_mdp != ''
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: |
+          python - <<'PY' > mdp.txt
+          import pathlib
+          derniere = [l for l in pathlib.Path("comptes_crees.txt").read_text(encoding="utf-8").splitlines() if l.startswith("[")][-1]
+          print(derniere.split("mdp=")[1].split("  statut=")[0], end="")
+          PY
+          gh secret set "${{ inputs.secret_mdp }}" --repo ${{ github.repository }} < mdp.txt
+          rm -f mdp.txt
+
+      - name: Resume
+        if: always()
+        run: |
+          if [ "${{ steps.creation.outcome }}" = "success" ]; then
+            {
+              echo "## Compte cree"
+              echo ""
+              grep '^\[' comptes_crees.txt | tail -1 | sed 's/mdp=[^ ]*/mdp=(dans le secret)/'
+            } | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "## Creation echouee"
+              echo ""
+              echo "Voir le log de l'etape : le script dit lequel des deux"
+              echo "obstacles a bloque (Turnstile sur /signup, ou temp-mail"
+              echo "qui refuse l'IP du runner)."
+              echo ""
+              echo "La meme commande marche en local :"
+              echo '```'
+              echo "python wm_signup.py --state storage_state_10.json"
+              echo '```'
+            } | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi

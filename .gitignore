@@ -13,3 +13,6 @@ lancer_wikimasters.txt
 wm_comptes.json
 .wikilover_id
 .repair-*.json
+
+# Identifiants de comptes crees par wm_signup.py -- depot PUBLIC.
+comptes_crees.txt
