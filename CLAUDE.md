@@ -188,6 +188,16 @@ ouvrir plus qu'on ne régénère**. Trois conséquences pratiques :
 144 ? »** Un compte en dessous a un problème de disponibilité (session
 morte), pas de quota.
 
+C'est désormais mesuré à chaque run : `wm_open_booster.py --compteur`
+journalise ce que chaque compte ouvre, et `wm_pack_report.py` publie le
+tableau `n/144` dans le résumé de `boosters.yml`. L'état vit dans la
+**variable de dépôt `WM_PACK_LOG`** — pas dans un commit, ce workflow
+passant une trentaine de fois par jour ; format compact (une entrée par
+compte et par passage), 3,6 Ko dans le pire cas contre 48 Ko de limite.
+C'est un détecteur plus fin que le code de sortie du job : une session
+qui meurt en milieu de journée laisse tous les runs verts et ne se
+trahit que par un rendement qui s'effondre.
+
 **Il existe aussi une limite quotidienne d'ÉCHANGES**, distincte de celle
 des paquets. Elle se manifeste par un 429 sur `PATCH /api/trades/{id}`
 (relevé le 05/09/2026) :
@@ -335,6 +345,7 @@ les mettre en concurrence.
 
 | Fichier | Rôle |
 |---|---|
+| `wm_pack_report.py` | **Rendement d'ouverture sur 24 h glissantes**, en Markdown pour `$GITHUB_STEP_SUMMARY`. Lit le journal alimenté par `wm_open_booster.py --compteur`. Signale les comptes sous 80 % du plafond de 144 — et se tait tant que le journal a moins de 23 h de recul, pour ne pas crier au loup au démarrage |
 | `wm_report_rares.py` | Rapport UR/L agrégé sur plusieurs comptes + solde du collecteur. Sortie Markdown, lisible telle quelle dans `$GITHUB_STEP_SUMMARY`. Arguments en `label=chemin_session`, `--json-out` pour un fragment, `--merge` pour agréger |
 | `wm_sales_reference.py` | **Chantier en cours.** Table de référence des prix par rareté depuis le compte premium. Sortie JSONL écrite au fil de l'eau, **reprenable** : relancer saute ce qui est déjà connu. Rafraîchit le jeton en cours de boucle. `--stats-only` pour le rapport sans appel réseau |
 | `wm_scrape_launch.py` | Lance le scrape ci-dessus en **processus vraiment indépendant** (sinon un scrape de 45 min meurt avec l'outil qui l'a lancé). Journal dans `data/scrape-{rareté}.log` |
@@ -346,7 +357,7 @@ les mettre en concurrence.
 
 | Fichier | Cadence | Ce qu'il fait |
 |---|---|---|
-| `boosters.yml` | 50 min, minutes 0/10/20/30/40 | Les 9 comptes en **séquentiel dans un seul job**, `--count 10` chacun (voir la limite quotidienne) |
+| `boosters.yml` | 50 min, minutes 0/10/20/30/40 | Les 9 comptes en **séquentiel dans un seul job**, `--count 10` chacun (voir la limite quotidienne). Publie le **rendement sur 24 h** (n/144) dans le résumé du run |
 | `discard.yml` | 50 min, +5 min | Défausse `C,PC,R,SR` sur les 9 comptes |
 | `trade.yml` | **1 jour**, 00:58 UTC | Les 8 émetteurs offrent leur solde, puis le collecteur accepte tout (voir la limite de 50 échanges/jour) |
 | `sell.yml` | 50 min, +15 min | Met en vente les meilleures **UR et L** des 9 comptes. Entrée `dry_run` (vraie par défaut en manuel), `rarities` pour restreindre |

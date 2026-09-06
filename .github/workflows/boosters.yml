@@ -86,6 +86,18 @@ jobs:
           python -c "import os, pathlib; pathlib.Path('state8.json').write_text(os.environ['WM_TEST8_STORAGE_STATE'])"
           python -c "import os, pathlib; pathlib.Path('state9.json').write_text(os.environ['WM_TEST9_STORAGE_STATE'])"
 
+      # Le compteur de rendement a besoin d'un etat qui survit au run.
+      # Une variable de depot plutot qu'un commit : ce workflow passe une
+      # trentaine de fois par jour, et autant de commits noieraient
+      # l'historique. Elle est plafonnee a 48 Ko, d'ou le format compact
+      # du journal (une entree par compte et par passage, pas par paquet).
+      - name: Restaure le journal du compteur
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: |
+          gh variable get WM_PACK_LOG --repo ${{ github.repository }} > packlog.json 2>/dev/null             || echo '{}' > packlog.json
+          python -c "import json,pathlib; p=pathlib.Path('packlog.json');             d=json.loads(p.read_text() or '{}');             print(f'journal restaure : {len(d)} compte(s)')"             || echo '{}' > packlog.json
+
       - name: Jitter aleatoire (0-15s)
         run: python -c "import random, time; time.sleep(random.uniform(0, 15))"
 
@@ -113,7 +125,7 @@ jobs:
       - name: Compte 1 -> ouvre tous ses boosters
         continue-on-error: true
         id: c0
-        run: python wm_open_booster.py --api --count 10 --state state1.json
+        run: python wm_open_booster.py --api --count 10 --state state1.json --compteur packlog.json --label compte1
 
       - name: Compte 1 -> sauvegarde la session
         if: always()
@@ -124,7 +136,7 @@ jobs:
       - name: Compte 2 -> ouvre tous ses boosters
         continue-on-error: true
         id: c1
-        run: python wm_open_booster.py --api --count 10 --state state2.json
+        run: python wm_open_booster.py --api --count 10 --state state2.json --compteur packlog.json --label compte2
 
       - name: Compte 2 -> sauvegarde la session
         if: always()
@@ -135,7 +147,7 @@ jobs:
       - name: Collecteur -> ouvre tous ses boosters
         continue-on-error: true
         id: c2
-        run: python wm_open_booster.py --api --count 10 --state state3.json
+        run: python wm_open_booster.py --api --count 10 --state state3.json --compteur packlog.json --label collecteur
 
       - name: Collecteur -> sauvegarde la session
         if: always()
@@ -146,7 +158,7 @@ jobs:
       - name: Compte 4 -> ouvre tous ses boosters
         continue-on-error: true
         id: c3
-        run: python wm_open_booster.py --api --count 10 --state state4.json
+        run: python wm_open_booster.py --api --count 10 --state state4.json --compteur packlog.json --label compte4
 
       - name: Compte 4 -> sauvegarde la session
         if: always()
@@ -157,7 +169,7 @@ jobs:
       - name: Compte 5 -> ouvre tous ses boosters
         continue-on-error: true
         id: c4
-        run: python wm_open_booster.py --api --count 10 --state state5.json
+        run: python wm_open_booster.py --api --count 10 --state state5.json --compteur packlog.json --label compte5
 
       - name: Compte 5 -> sauvegarde la session
         if: always()
@@ -168,7 +180,7 @@ jobs:
       - name: Compte 6 -> ouvre tous ses boosters
         continue-on-error: true
         id: c5
-        run: python wm_open_booster.py --api --count 10 --state state6.json
+        run: python wm_open_booster.py --api --count 10 --state state6.json --compteur packlog.json --label compte6
 
       - name: Compte 6 -> sauvegarde la session
         if: always()
@@ -179,7 +191,7 @@ jobs:
       - name: Compte 7 -> ouvre tous ses boosters
         continue-on-error: true
         id: c6
-        run: python wm_open_booster.py --api --count 10 --state state7.json
+        run: python wm_open_booster.py --api --count 10 --state state7.json --compteur packlog.json --label compte7
 
       - name: Compte 7 -> sauvegarde la session
         if: always()
@@ -190,7 +202,7 @@ jobs:
       - name: Compte 8 -> ouvre tous ses boosters
         continue-on-error: true
         id: c7
-        run: python wm_open_booster.py --api --count 10 --state state8.json
+        run: python wm_open_booster.py --api --count 10 --state state8.json --compteur packlog.json --label compte8
 
       - name: Compte 8 -> sauvegarde la session
         if: always()
@@ -201,13 +213,37 @@ jobs:
       - name: Compte 9 -> ouvre tous ses boosters
         continue-on-error: true
         id: c8
-        run: python wm_open_booster.py --api --count 10 --state state9.json
+        run: python wm_open_booster.py --api --count 10 --state state9.json --compteur packlog.json --label compte9
 
       - name: Compte 9 -> sauvegarde la session
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
         run: gh secret set WM_TEST9_STORAGE_STATE --repo ${{ github.repository }} < state9.json
+
+      # LE RENDEMENT EST UN MEILLEUR DETECTEUR DE PANNE QUE LE CODE DE
+      # SORTIE. Le plafond du jeu vaut 144 paquets par 24 h glissantes
+      # (mesure le 06/09/2026 sur 190 refus, cf CLAUDE.md), et 144 vaut
+      # exactement la regeneration d'une journee. Un compte AU plafond va
+      # donc parfaitement bien -- etre limite n'est pas un incident. Un
+      # compte nettement EN DESSOUS n'ouvre pas ce qu'il pourrait, et la
+      # cause est presque toujours une session morte.
+      #
+      # C'est plus fin que l'etape suivante : une session qui meurt en
+      # milieu de journee laisse tous les runs verts, et ne se trahit que
+      # par un rendement qui s'effondre.
+      - name: Rendement d'ouverture sur 24 h
+        if: always()
+        run: python wm_pack_report.py packlog.json | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # Non bloquant : si la variable n'est pas accessible (jeton sans le
+      # droit voulu), on perd le compteur, pas l'ouverture des boosters.
+      - name: Sauvegarde le journal du compteur
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+        run: gh variable set WM_PACK_LOG --repo ${{ github.repository }} < packlog.json
 
       # Rend les comptes en echec VISIBLES. Avec continue-on-error, un
       # compte dont la session est morte laisse le job en "success" : le

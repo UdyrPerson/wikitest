@@ -528,14 +528,61 @@ def open_and_reveal(ctx, page, candidates, stamp) -> bool:
     return continued
 
 
-def open_via_api(req_ctx, count: int):
+def enregistrer_compteur(chemin: Path, label: str, n: int) -> None:
+    """Ajoute « n paquets ouverts maintenant » au journal du compteur.
+
+    POURQUOI CE JOURNAL EXISTE
+
+    Le plafond du jeu vaut 144 paquets par 24 h glissantes, mesure le
+    06/09/2026 (cf CLAUDE.md). Le bon indicateur de sante d'un compte
+    n'est donc pas « a-t-il ete limite ? » -- l'etre prouve au contraire
+    le rendement maximal -- mais « est-il a 144 ? ». Un compte en dessous
+    a un probleme de disponibilite, typiquement une session morte.
+
+    Rien cote serveur ne donne ce compte : aucune route de statistiques
+    n'existe, et le message du 429 ne chiffre pas le plafond. Il faut donc
+    l'accumuler nous-memes, d'ou ce fichier.
+
+    Format compact volontaire -- {label: [[minute unix, n], ...]} -- parce
+    qu'il transite par une variable de depot, plafonnee a 48 Ko. Une
+    entree par passage et par compte, pas une par paquet.
+    """
+    if n <= 0:
+        return
+    try:
+        journal = json.loads(chemin.read_text(encoding="utf-8")) if chemin.exists() else {}
+        if not isinstance(journal, dict):
+            journal = {}
+    except Exception:
+        journal = {}  # journal illisible : on repart proprement plutot que d'echouer
+
+    minute = int(time.time() // 60)
+    journal.setdefault(label, []).append([minute, n])
+
+    # On ne garde que 24 h : au-dela c'est hors fenetre, et la variable
+    # de depot a une taille limitee.
+    limite = minute - 24 * 60
+    for cle in list(journal):
+        journal[cle] = [e for e in journal[cle] if isinstance(e, list) and e[0] >= limite]
+        if not journal[cle]:
+            del journal[cle]
+
+    chemin.write_text(json.dumps(journal, separators=(",", ":")), encoding="utf-8")
+
+
+def open_via_api(req_ctx, count: int, results=None):
     """Ouvre 'count' paquets par appel direct a l'API, sans navigateur.
+
+    'results' peut etre une liste fournie par l'appelant : elle est
+    remplie au fil de l'eau, donc les paquets deja ouverts restent
+    connus meme si la fonction leve ensuite (401 sur le 3e paquet, par
+    exemple). C'est ce qui permet au compteur de ne rien perdre.
     S'arrete plus tot sur session expiree (401), erreur, ou plus de paquets
     disponibles -- ce dernier cas etant signale de DEUX facons par l'API :
     packs_remaining <= 0 dans une reponse 200, ou un 403 avec
     {"error":"Plus de paquets disponibles"} si le compteur etait deja a
     zero. Les deux sont des fins normales, pas des erreurs."""
-    results = []
+    results = [] if results is None else results
     trop_vite = 0
     for i in range(1, count + 1):
         # timeout a 90s : le defaut de Playwright (30s) a fait planter la
@@ -783,6 +830,25 @@ def main():
             except (IndexError, ValueError):
                 raise SystemExit("--count attend un entier, ex: --count 5")
 
+        # --compteur/--label alimentent le journal du rendement (voir
+        # enregistrer_compteur). Optionnels : sans eux le script se
+        # comporte exactement comme avant.
+        compteur = label = None
+        if "--compteur" in sys.argv:
+            idx = sys.argv.index("--compteur")
+            try:
+                compteur = Path(sys.argv[idx + 1])
+            except IndexError:
+                raise SystemExit("--compteur attend un chemin, ex: --compteur packlog.json")
+            label = state.stem
+            if "--label" in sys.argv:
+                idx = sys.argv.index("--label")
+                try:
+                    label = sys.argv[idx + 1]
+                except IndexError:
+                    raise SystemExit("--label attend un nom, ex: --label compte1")
+
+        results = []
         with sync_playwright() as p:
             req_ctx = ensure_fresh(p, state, BASE)
             # try/finally : open_via_api leve SystemExit sur 401/403, et le
@@ -790,10 +856,15 @@ def main():
             # erreur. Sans sauvegarde, la copie stockee devient perimee et
             # la session sera revoquee au prochain usage (cf wm_session_io).
             try:
-                results = open_via_api(req_ctx, count)
+                open_via_api(req_ctx, count, results)
             finally:
                 persist(req_ctx, state)
                 req_ctx.dispose()
+                # Dans le finally : un 401 au troisieme paquet ne doit pas
+                # faire oublier les deux premiers, sinon le rendement
+                # affiche accuse a tort un compte qui travaillait.
+                if compteur is not None:
+                    enregistrer_compteur(compteur, label, len(results))
 
         DATA.mkdir(exist_ok=True)
         stamp = time.strftime("%Y-%m-%d_%H%M%S")
