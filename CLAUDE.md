@@ -223,6 +223,14 @@ Conséquence pour le rachat : **le prix demandé n'est atteignable que sur une
 enchère vierge.** Dès qu'un tiers mise, le minimum saute de 10 % et dépasse
 le prix fixé par le vendeur.
 
+D'où la stratégie de `wm_market_buy.py` : **ne racheter que les enchères qui
+arrivent à terme** (`sort=ending_soon`, fenêtre de 10 min). Une mise posée
+tôt affiche un meneur pendant des heures et invite la surenchère ; posée
+dans les dernières minutes, elle laisse beaucoup moins de temps à un tiers
+pour réagir. Effet de bord appréciable : le balayage tombe de ~180 pages à
+quelques-unes, donc la perte de pagination décrite plus haut devient
+négligeable. En contrepartie, une annonce longue n'est vue qu'en fin de vie.
+
 Aucun endpoint de **retrait** d'enchère n'a été observé : une annonce postée
 va à son terme.
 
@@ -277,7 +285,7 @@ les mettre en concurrence.
 | `wm_sell.py` | **Met une carte aux enchères, à la main.** Simulation par défaut, `--go` obligatoire pour écrire, et `--go` exige une possession désignée (`--card`) dont la rareté est revérifiée dans la collection avant l'appel. Lit le plafond d'emplacements au lieu de le supposer, et refuse de vendre depuis la session premium. Suggère un prix depuis `data/sales-{rareté}.jsonl` |
 | `wm_trade_gift_wb.py` | Offre **tout** le solde de wikibidous à un ami, sans carte en retour |
 | `wm_trade_accept_all.py` | Accepte toutes les offres `pending`. Ne distingue pas reçu/envoyé — à n'utiliser que sur un compte qui ne fait que recevoir |
-| `wm_market_buy.py` | **Rachète au prix demandé toutes les enchères actives d'un vendeur.** Le vendeur vient de `WM_MARKET_SELLER` (UUID ou pseudo) et **n'est jamais imprimé** — dépôt public. Simulation par défaut, `--go` pour miser. Saute ce sur quoi un tiers a déjà misé, et ce dont on est déjà le meneur (idempotent) |
+| `wm_market_buy.py` | **Rachète au prix demandé les enchères d'un vendeur qui arrivent à terme.** Le vendeur vient de `WM_MARKET_SELLER` (UUID ou pseudo) et **n'est jamais imprimé** — dépôt public. Balaie en `sort=ending_soon` et s'arrête à `--fenetre-min` (10 min) : miser tard limite la surenchère et réduit le balayage à quelques pages. Saute ce sur quoi un tiers a déjà misé, et ce dont on est déjà le meneur (idempotent) |
 | `wm_ouverture_booster.py` | Outil « ouvertureBooster » : un booster avec l'animation, en réutilisant la fenêtre persistante |
 | `wm_auto_booster.py` | Boucle locale toutes les ~10 min (±20 % de variation). Largement remplacé par les workflows |
 
@@ -300,7 +308,7 @@ les mettre en concurrence.
 | `discard.yml` | 50 min, +5 min | Défausse `C,PC,R,SR` sur les 9 comptes |
 | `trade.yml` | **1 jour**, 00:58 UTC | Les 8 émetteurs offrent leur solde, puis le collecteur accepte tout (voir la limite de 50 échanges/jour) |
 | `sell.yml` | 50 min, +15 min | Met en vente les meilleures **UR et L** des 9 comptes. Entrée `dry_run` (vraie par défaut en manuel), `rarities` pour restreindre |
-| `market-buy.yml` | **manuel** | Le collecteur rachète au prix demandé les enchères du vendeur suivi (`WM_MARKET_SELLER`). `dry_run` **faux** par défaut, plus `complet`, `fenetre_min`, `max_depense` |
+| `market-buy.yml` | **manuel** | Le collecteur rachète au prix demandé les enchères du vendeur suivi (`WM_MARKET_SELLER`), **parmi celles qui finissent dans moins de 10 min**. `dry_run` **faux** par défaut, plus `complet`, `fenetre_min`, `max_depense` |
 | `report-rares.yml` | manuel | Lecture seule, rapport dans le résumé du run |
 
 Quatre choses à savoir avant d'y toucher :

@@ -40,16 +40,26 @@ Or cette liste bouge pendant qu'on la pagine. Un balayage complet du
 suivantes vers l'avant, et ce qui passe sous le curseur n'est jamais lu.
 Un balayage complet n'est donc PAS une garantie d'exhaustivite.
 
-D'ou le mode par defaut, qui est plus sur que le mode complet : avec
-sort=recent la liste est triee par date de creation decroissante, donc
-les encheres recentes sont en tete. On s'arrete des qu'une page entiere
-est plus vieille que la fenetre. Trois consequences :
+D'ou le mode par defaut : sort=ending_soon, et on s'arrete des qu'une
+page entiere se termine au-dela de la fenetre. On ne regarde donc que
+les encheres SUR LE POINT DE FINIR. Trois raisons, dans l'ordre
+d'importance :
 
-- le balayage dure quelques secondes au lieu de trois minutes, donc la
-  liste bouge beaucoup moins sous le curseur ;
-- une enchere creee depuis le dernier passage est forcement dans la
-  fenetre, quelle que soit sa duree ;
-- --complet reste disponible pour un rattrapage, en acceptant sa perte.
+- **miser tard est strategiquement meilleur.** Une mise posee tot
+  affiche un meneur pendant des heures et invite la surenchere ; le
+  minimum saute alors de 10 % et le prix demande devient inatteignable.
+  Miser dans les dernieres minutes laisse beaucoup moins de temps a un
+  tiers pour reagir ;
+- le balayage devient minuscule -- quelques pages au lieu de 180 -- donc
+  la liste n'a presque pas le temps de bouger sous le curseur, et la
+  perte de pagination decrite plus haut devient negligeable ;
+- il ne coute rien de rater une enchere longue au premier passage : elle
+  reviendra dans la fenetre en fin de vie.
+
+Corollaire a ne pas oublier : une enchere n'est vue que dans ses
+dernieres minutes. Sur une annonce de 10 min, n'importe quel moment
+convient ; sur une annonce de 6 h, il faut lancer le rachat vers la fin,
+ou elargir --fenetre-min.
 
 IDEMPOTENCE
 
@@ -83,7 +93,10 @@ from wm_session_io import ensure_fresh, identifiant, persist
 BASE = "https://www.wiki-masters.com"
 DELAY = 2.0          # entre deux mises, cf CLAUDE.md
 DELAY_PAGE = 0.3     # entre deux pages de lecture, borne et ponctuel
-FENETRE_MIN = 90     # on remonte 90 min en arriere par defaut
+# Fenetre par defaut : on ne regarde que ce qui se termine dans les 10
+# prochaines minutes. Voir le docstring -- miser tard limite la fenetre
+# de surenchere, et le balayage tient en quelques pages.
+FENETRE_MIN = 10
 
 # PLAFOND DUR DE L'API, verifie le 06/09/2026 : limit=50 renvoie 50
 # encheres, limit=100 et limit=200 en renvoient ZERO -- sans erreur, sans
@@ -121,13 +134,18 @@ def mise_minimale(a) -> int:
 
 
 def balayer(req, cible_norm, fenetre_min, complet, limite):
-    """Encheres actives du vendeur cible, du plus recent au plus ancien."""
-    seuil = datetime.now(timezone.utc) - timedelta(minutes=fenetre_min)
+    """Encheres actives du vendeur cible se terminant dans la fenetre.
+
+    Triees par fin imminente : les premieres pages portent ce qui expire
+    le plus tot. Des qu'une page entiere se termine au-dela de la fenetre,
+    tout le reste aussi -- on s'arrete la."""
+    maintenant = datetime.now(timezone.utc)
+    limite_fin = maintenant + timedelta(minutes=fenetre_min)
     vus, cibles = set(), []
     page, total, pages_lues = 1, None, 0
 
     while True:
-        r = req.get(f"/api/marketplace?page={page}&limit={limite}&sort=recent", timeout=60000)
+        r = req.get(f"/api/marketplace?page={page}&limit={limite}&sort=ending_soon", timeout=60000)
         if r.status == 401:
             raise SystemExit("401 sur /api/marketplace — session expiree.")
         if r.status != 200:
@@ -150,25 +168,33 @@ def balayer(req, cible_norm, fenetre_min, complet, limite):
                 )
             break
 
-        recentes = 0
+        dans_fenetre = 0
         for a in lot:
             aid = a.get("id")
             if aid in vus:
                 continue
             vus.add(aid)
-            cree = a.get("created_at") or ""
+
+            fin = a.get("end_at") or ""
             try:
-                if datetime.fromisoformat(cree.replace("Z", "+00:00")) >= seuil:
-                    recentes += 1
+                fin = datetime.fromisoformat(fin.replace("Z", "+00:00"))
             except ValueError:
-                recentes += 1  # date illisible : on ne s'arrete pas dessus
-            if a.get("status") == "active" and vise(a, cible_norm):
+                fin = None  # date illisible : on ne s'arrete pas dessus
+            proche = complet or fin is None or fin <= limite_fin
+            if proche:
+                dans_fenetre += 1
+
+            # Une enchere deja passee attend seulement son reglement : y
+            # miser echouerait, et elle n'est de toute facon plus a vendre.
+            if fin is not None and fin <= maintenant and not complet:
+                continue
+            if proche and a.get("status") == "active" and vise(a, cible_norm):
                 cibles.append(a)
 
-        # Arret des qu'une page entiere est plus ancienne que la fenetre :
-        # le tri etant par date de creation decroissante, tout ce qui suit
-        # l'est aussi.
-        if not complet and recentes == 0:
+        # Arret des qu'une page entiere se termine au-dela de la fenetre :
+        # le tri etant par fin croissante, tout ce qui suit finit encore
+        # plus tard.
+        if not complet and dans_fenetre == 0:
             break
         if not d.get("hasMore"):
             break
@@ -177,7 +203,8 @@ def balayer(req, cible_norm, fenetre_min, complet, limite):
 
     print(f"  {pages_lues} page(s) lue(s), {len(vus)} enchere(s) vues"
           + (f" sur {total} annoncees" if total else "")
-          + (" (balayage complet)" if complet else f" (fenetre {fenetre_min} min)"))
+          + (" (balayage complet)" if complet
+             else f" (celles finissant sous {fenetre_min} min)"))
     return cibles
 
 
@@ -269,9 +296,10 @@ def main():
     ap.add_argument("state", help="fichier de session du compte acheteur")
     ap.add_argument("--go", action="store_true", help="mise reellement (sinon simulation)")
     ap.add_argument("--complet", action="store_true",
-                    help="balaie tout le marche au lieu de la fenetre recente")
+                    help="balaie tout le marche, sans filtre de date de fin")
     ap.add_argument("--fenetre-min", type=int, default=FENETRE_MIN,
-                    help=f"minutes d'anciennete balayees (defaut {FENETRE_MIN})")
+                    help=f"ne considere que les encheres finissant dans moins de N "
+                         f"minutes (defaut {FENETRE_MIN})")
     ap.add_argument("--limite", type=int, default=LIMITE,
                     help=f"taille de page, plafonnee a {LIMITE} par l'API")
     ap.add_argument("--max-depense", type=int, default=None,

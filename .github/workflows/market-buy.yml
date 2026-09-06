@@ -57,12 +57,12 @@ on:
         type: boolean
         default: false
       complet:
-        description: "Balayer tout le marche au lieu de la fenetre recente"
+        description: "Balayer tout le marche, sans filtre de date de fin (lent)"
         type: boolean
         default: false
       fenetre_min:
-        description: "Minutes d'anciennete balayees (defaut 90)"
-        default: "90"
+        description: "Ne racheter que les encheres finissant dans moins de N minutes"
+        default: "10"
       max_depense:
         description: "Plafond de depense pour ce passage, en wb (vide = tout le solde)"
         default: ""
@@ -134,7 +134,7 @@ jobs:
           WM_MARKET_SELLER: ${{ secrets.WM_MARKET_SELLER }}
         run: |
           python wm_market_buy.py state3.json \
-            --fenetre-min "${{ inputs.fenetre_min || '90' }}" \
+            --fenetre-min "${{ inputs.fenetre_min || '10' }}" \
             $COMPLET $PLAFOND $GO | tee -a "$GITHUB_STEP_SUMMARY"
 
       # La session repart dans son secret juste apres le passage, jamais
@@ -156,9 +156,15 @@ jobs:
           {
             echo "## Le collecteur a echoue"
             echo ""
-            echo "Session probablement revoquee. Reparation :"
-            echo '```'
-            echo "python wm_session_repair.py collecteur"
-            echo '```'
+            echo "Causes possibles, dans l'ordre de frequence :"
+            echo ""
+            echo "- session revoquee (401 dans le journal de l'etape) :"
+            echo '  ```'
+            echo "  python wm_session_repair.py collecteur"
+            echo '  ```'
+            echo "- TimeoutError : le site n'a pas repondu a temps, relancer suffit."
+            echo ""
+            echo "Lire le journal de l'etape avant de reparer : une reconnexion"
+            echo "inutile invalide une session qui allait tres bien.
           } | tee -a "$GITHUB_STEP_SUMMARY"
           exit 1
