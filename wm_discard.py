@@ -186,7 +186,53 @@ def discard_rarity(req_ctx, rarity: str, remaining_budget) -> int:
     return discarded
 
 
+def fusionner(chemins) -> None:
+    """Tableau Markdown de ce que chaque compte a defausse, pour le resume.
+
+    POURQUOI CETTE SORTIE EXISTE
+
+    discard.yml n'ecrivait que « Tous les comptes ont ete traites » dans
+    le resume du run : aucun chiffre. Vu depuis l'interface GitHub, le
+    workflow avait donc l'air de ne rien faire, alors qu'il defaussait
+    plus de deux cents cartes par passage -- il fallait ouvrir le journal
+    de chaque etape pour le verifier. Signale le 06/09/2026.
+    """
+    fiches = []
+    for c in chemins:
+        try:
+            fiches.append(json.loads(Path(c).read_text(encoding="utf-8")))
+        except Exception:
+            continue
+
+    print("## Cartes defaussees")
+    print()
+    if not fiches:
+        print("Aucun fragment lisible : tous les comptes ont echoue avant d'ecrire.")
+        return
+
+    raretes = [r for r in DEFAULT_RARITIES
+               if any(f.get("rarites", {}).get(r) for f in fiches)]
+    print("| Compte | " + " | ".join(raretes) + " | Total | Solde |")
+    print("|---" * (len(raretes) + 3) + "|")
+    for f in fiches:
+        cases = [str(f.get("rarites", {}).get(r, 0)) for r in raretes]
+        print(f"| {f.get('label', '?')} | " + " | ".join(cases)
+              + f" | **{f.get('total', 0)}** | {f.get('solde', '?')} |")
+    total = sum(f.get("total", 0) for f in fiches)
+    print("| **Total** | " + " | ".join(
+        str(sum(f.get("rarites", {}).get(r, 0) for f in fiches)) for r in raretes)
+        + f" | **{total}** | |")
+    print()
+    if total == 0:
+        print("*Rien a defausser : les comptes avaient deja ete vides au passage "
+              "precedent. C'est normal quand deux runs se suivent de pres.*")
+
+
 def main():
+    if "--merge" in sys.argv:
+        fusionner(sys.argv[sys.argv.index("--merge") + 1:])
+        return
+
     # Distingue l'argument positionnel (fichier de session) des flags a
     # valeur (--rarities X, --max N) : sauter la valeur qui suit chacun
     # de ces flags plutot que de la prendre par erreur pour le fichier.
@@ -196,7 +242,7 @@ def main():
         if skip_next:
             skip_next = False
             continue
-        if a in ("--rarities", "--max"):
+        if a in ("--rarities", "--max", "--label", "--json-out"):
             skip_next = True
             continue
         if not a.startswith("--"):
@@ -227,6 +273,15 @@ def main():
 
     remaining_budget = [max_total if max_total is not None else float("inf")]
 
+    # --label / --json-out alimentent le tableau du resume de run (voir
+    # fusionner). Optionnels : sans eux, comportement inchange.
+    label = state_path.stem
+    if "--label" in sys.argv:
+        label = sys.argv[sys.argv.index("--label") + 1]
+    json_out = None
+    if "--json-out" in sys.argv:
+        json_out = sys.argv[sys.argv.index("--json-out") + 1]
+
     with sync_playwright() as p:
         # Force la rotation du jeton avant la boucle : sans ca, une
         # expiration en cours de defausse revoque la session (cf
@@ -234,6 +289,7 @@ def main():
         req_ctx = ensure_fresh(p, state_path, BASE)
 
         total = 0
+        par_rarete = {}
         # try/finally : discard_rarity leve SystemExit sur 401/403, et le
         # serveur a pu faire tourner le refresh token avant. Sans
         # sauvegarde, la session sera revoquee au prochain usage
@@ -243,13 +299,29 @@ def main():
                 print(f"\n--- {rarity} ---")
                 n = discard_rarity(req_ctx, rarity, remaining_budget)
                 print(f"  {n} carte(s) '{rarity}' defaussee(s)")
+                par_rarete[rarity] = n
                 total += n
                 if remaining_budget[0] <= 0:
                     print("Limite --max atteinte — arret.")
                     break
         finally:
+            solde = None
+            if json_out:
+                # Avant persist() : le contexte de requetes doit encore
+                # etre utilisable pour lire le solde.
+                try:
+                    solde = json.loads(req_ctx.get("/api/wikibidous").text()).get("balance")
+                except Exception:
+                    pass
             persist(req_ctx, state_path)
             req_ctx.dispose()
+            # Dans le finally : un 401 sur la derniere rarete ne doit pas
+            # effacer du rapport ce qui a reellement ete defausse avant.
+            if json_out:
+                Path(json_out).write_text(json.dumps({
+                    "label": label, "total": total,
+                    "rarites": par_rarete, "solde": solde,
+                }, ensure_ascii=False), encoding="utf-8")
 
     print(f"\nTotal : {total} carte(s) defaussee(s) sur {rarities}.")
 

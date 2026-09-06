@@ -91,7 +91,7 @@ jobs:
       - name: Compte 1 -> defausse C/PC/R
         continue-on-error: true
         id: c0
-        run: python wm_discard.py state1.json --rarities C,PC,R,SR
+        run: python wm_discard.py state1.json --rarities C,PC,R,SR --label compte1 --json-out dfrag1.json
 
       # Chaque compte renvoie SA session dans SON secret juste apres
       # avoir ete traite, et non tous les cinq a la fin. Sans ca, ce
@@ -112,7 +112,7 @@ jobs:
       - name: Compte 2 -> defausse C/PC/R
         continue-on-error: true
         id: c1
-        run: python wm_discard.py state2.json --rarities C,PC,R,SR
+        run: python wm_discard.py state2.json --rarities C,PC,R,SR --label compte2 --json-out dfrag2.json
 
       - name: Compte 2 -> sauvegarde la session
         if: always()
@@ -123,7 +123,7 @@ jobs:
       - name: Compte 3 (collecteur) -> defausse C/PC/R
         continue-on-error: true
         id: c2
-        run: python wm_discard.py state3.json --rarities C,PC,R,SR
+        run: python wm_discard.py state3.json --rarities C,PC,R,SR --label collecteur --json-out dfrag3.json
 
       - name: Compte 3 -> sauvegarde la session
         if: always()
@@ -134,7 +134,7 @@ jobs:
       - name: Compte 4 -> defausse C/PC/R
         continue-on-error: true
         id: c3
-        run: python wm_discard.py state4.json --rarities C,PC,R,SR
+        run: python wm_discard.py state4.json --rarities C,PC,R,SR --label compte4 --json-out dfrag4.json
 
       - name: Compte 4 -> sauvegarde la session
         if: always()
@@ -145,7 +145,7 @@ jobs:
       - name: Compte 5 -> defausse C/PC/R
         continue-on-error: true
         id: c4
-        run: python wm_discard.py state5.json --rarities C,PC,R,SR
+        run: python wm_discard.py state5.json --rarities C,PC,R,SR --label compte5 --json-out dfrag5.json
 
       - name: Compte 5 -> sauvegarde la session
         if: always()
@@ -156,7 +156,7 @@ jobs:
       - name: Compte 6 -> defausse C/PC/R
         continue-on-error: true
         id: c5
-        run: python wm_discard.py state6.json --rarities C,PC,R,SR
+        run: python wm_discard.py state6.json --rarities C,PC,R,SR --label compte6 --json-out dfrag6.json
 
       - name: Compte 6 -> sauvegarde la session
         if: always()
@@ -167,7 +167,7 @@ jobs:
       - name: Compte 7 -> defausse C/PC/R
         continue-on-error: true
         id: c6
-        run: python wm_discard.py state7.json --rarities C,PC,R,SR
+        run: python wm_discard.py state7.json --rarities C,PC,R,SR --label compte7 --json-out dfrag7.json
 
       - name: Compte 7 -> sauvegarde la session
         if: always()
@@ -178,7 +178,7 @@ jobs:
       - name: Compte 8 -> defausse C/PC/R
         continue-on-error: true
         id: c7
-        run: python wm_discard.py state8.json --rarities C,PC,R,SR
+        run: python wm_discard.py state8.json --rarities C,PC,R,SR --label compte8 --json-out dfrag8.json
 
       - name: Compte 8 -> sauvegarde la session
         if: always()
@@ -189,7 +189,7 @@ jobs:
       - name: Compte 9 -> defausse C/PC/R
         continue-on-error: true
         id: c8
-        run: python wm_discard.py state9.json --rarities C,PC,R,SR
+        run: python wm_discard.py state9.json --rarities C,PC,R,SR --label compte9 --json-out dfrag9.json
 
       - name: Compte 9 -> sauvegarde la session
         if: always()
@@ -202,6 +202,19 @@ jobs:
       # compte 2 est reste en 401 sans que personne le remarque, le
       # 04/09/2026. On resume ici qui est tombe, et on fait echouer le job
       # pour declencher la notification GitHub habituelle.
+      # Rend le travail VISIBLE. Le resume ne disait que « tous les
+      # comptes ont ete traites » : aucun chiffre, donc le workflow avait
+      # l'air de ne rien faire alors qu'il defaussait plus de deux cents
+      # cartes par passage (constate le 06/09/2026). Il fallait ouvrir le
+      # journal de chaque etape pour s'en assurer.
+      #
+      # Des comptes a zero sont normaux : deux runs rapproches ne laissent
+      # pas le temps d'ouvrir de nouveaux paquets, et il n'y a alors rien
+      # a defausser.
+      - name: Recapitulatif des cartes defaussees
+        if: always()
+        run: python wm_discard.py --merge dfrag*.json | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: Signale les comptes en echec
         if: always()
         run: |

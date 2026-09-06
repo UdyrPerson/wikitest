@@ -331,7 +331,7 @@ les mettre en concurrence.
 | Fichier | Rôle |
 |---|---|
 | `wm_open_booster.py` | Le gros morceau (33 Ko). Gère la fenêtre persistante et l'ouverture. Sans option : ouvre/rattache, aucune action. `--recon` : repère + screenshot, sans cliquer. `--click` : animation complète. `--api [--count N] [--state F]` : `POST /api/packs/open` en direct, **c'est ce mode qu'utilisent les workflows** |
-| `wm_discard.py` | Défausse par lots de 50 via `bulk-discard`. Liste blanche stricte de raretés — refuse tout ce qui n'y est pas. Relit la page 0 après chaque lot au lieu de paginer |
+| `wm_discard.py` | Défausse par lots de 50 via `bulk-discard`. Liste blanche stricte de raretés — refuse tout ce qui n'y est pas. Relit la page 0 après chaque lot au lieu de paginer. `--label`/`--json-out` écrivent un fragment, `--merge` en fait le tableau du résumé de run |
 | `wm_sell_auto.py` | **Le moteur de vente.** Choisit et met en vente les meilleures cartes d'un compte : prix = moyenne × 1,10, durée 6 h, priorisation par espérance de gain. La stratégie complète et ses justifications chiffrées sont dans son docstring. `--rarities L,UR` quand UR sera prêt |
 | `wm_reference_build.py` | Condense `data/sales-{rareté}.jsonl` (5,6 Mo, non versionné) en `reference/{rareté}.json` (479 Ko, **versionné**). Sans ce fichier commité, le workflow de vente n'a aucun prix de référence sur un runner |
 | `wm_sell.py` | **Met une carte aux enchères, à la main.** Simulation par défaut, `--go` obligatoire pour écrire, et `--go` exige une possession désignée (`--card`) dont la rareté est revérifiée dans la collection avant l'appel. Lit le plafond d'emplacements au lieu de le supposer, et refuse de vendre depuis la session premium. Suggère un prix depuis `data/sales-{rareté}.jsonl` |
@@ -358,7 +358,7 @@ les mettre en concurrence.
 | Fichier | Cadence | Ce qu'il fait |
 |---|---|---|
 | `boosters.yml` | 50 min, minutes 0/10/20/30/40 | Les 9 comptes en **séquentiel dans un seul job**, `--count 10` chacun (voir la limite quotidienne). Publie le **rendement sur 24 h** (n/144) dans le résumé du run |
-| `discard.yml` | 50 min, +5 min | Défausse `C,PC,R,SR` sur les 9 comptes |
+| `discard.yml` | 50 min, +5 min | Défausse `C,PC,R,SR` sur les 9 comptes. Publie le **récapitulatif des cartes défaussées** par compte et par rareté dans le résumé du run |
 | `trade.yml` | **1 jour**, 00:58 UTC | Les 8 émetteurs offrent leur solde, puis le collecteur accepte tout (voir la limite de 50 échanges/jour) |
 | `sell.yml` | 50 min, +15 min | Met en vente les meilleures **UR et L** des 9 comptes. Entrée `dry_run` (vraie par défaut en manuel), `rarities` pour restreindre |
 | `market-buy.yml` | **manuel** | Le collecteur rachète au prix demandé les enchères du vendeur suivi (`WM_MARKET_SELLER`), **parmi celles qui finissent dans moins de 10 min**. `dry_run` **faux** par défaut, plus `complet`, `fenetre_min`, `max_depense` |
