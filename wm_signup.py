@@ -228,11 +228,29 @@ def code_de_verification(page, ctx, adresse: str) -> str:
         # part dans une boite qu'on ne regarde plus -- ce n'est pas une
         # question de patience.
         if int(reste) % 60 < INTERVALLE_BOITE_S:
-            try:
-                courante = page.locator("#mail").first.input_value(timeout=3000).strip()
-            except Exception:
-                courante = "(illisible)"
-            marque = "" if courante == adresse else "  <- CHANGE, le courrier part ailleurs"
+            # Le champ #mail affiche « Chargement », « Chargement. »... en
+            # attendant sa valeur : le lire au mauvais moment donnait
+            # « CHANGE, le courrier part ailleurs » sur une boite
+            # parfaitement saine (07/09/2026, diagnostic suivi a tort).
+            # On reessaie donc jusqu'a obtenir quelque chose qui ressemble
+            # a une adresse, et on distingue « change » de « illisible ».
+            courante = ""
+            for _ in range(5):
+                try:
+                    courante = page.locator("#mail").first.input_value(timeout=3000).strip()
+                except Exception:
+                    courante = ""
+                if "@" in courante:
+                    break
+                page.wait_for_timeout(1000)
+
+            if "@" not in courante:
+                marque = "  (champ en cours de chargement — etat indetermine)"
+                courante = courante or "(illisible)"
+            elif courante != adresse:
+                marque = "  <- CHANGE, le courrier part ailleurs"
+            else:
+                marque = ""
             print(f"  boite surveillee : {courante}{marque}")
         print(f"  message pas encore arrive ({reste} s restantes)")
         page.wait_for_timeout(random.uniform(INTERVALLE_BOITE_S * 1000,
