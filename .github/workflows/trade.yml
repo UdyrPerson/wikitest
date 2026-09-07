@@ -254,10 +254,16 @@ jobs:
             {
               echo "## Comptes en echec :$echecs"
               echo ""
-              echo "Session probablement revoquee. Reparation :"
-              echo '```'
-              echo "python wm_session_repair.py$echecs"
-              echo '```'
+              echo "Lire le journal de l'etape AVANT de reparer :"
+              echo ""
+              echo "- un 401 est bien une session revoquee, et se repare par"
+              echo '  ```'
+              echo "  python wm_session_repair.py$echecs"
+              echo '  ```'
+              echo "- un TimeoutError ou un ETIMEDOUT est un alea reseau :"
+              echo "  le compte va bien, le passage suivant rattrapera."
+              echo ""
+              echo "Une reconnexion inutile invalide une session saine."
             } | tee -a "$GITHUB_STEP_SUMMARY"
             exit 1
           fi

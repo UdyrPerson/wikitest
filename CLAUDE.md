@@ -420,6 +420,16 @@ l'écart avec `boosters` et `discard`. Et un **trou global de 94 min**
 (09:43 → 11:17 UTC) a touché tous les workflows le même jour : c'est
 l'ordonnanceur de GitHub, pas le dépôt.
 
+**Un aléa réseau n'est pas une session morte.** Le 07/09/2026, un
+`read ETIMEDOUT` sur `POST /api/packs/open` a fait échouer les comptes 2
+et 4 et rougir le job, sous le libellé « session probablement révoquée » —
+alors que les deux tournaient à 100 % de leur plafond. `open_via_api`
+s'arrête désormais proprement pour ce compte au lieu de propager, **sans
+réessayer** : la route n'est pas idempotente, et insister ouvrirait un
+second paquet dont on perdrait aussi les cartes. Les quatre workflows
+distinguent maintenant, dans leur résumé, le 401 (vraie révocation) du
+timeout — une reconnexion inutile invalide une session saine.
+
 **Le défaut de timeout de Playwright est de 30 s, et c'est trop court.**
 La défausse du compte 4 est morte le 06/09/2026 sur un `TimeoutError` en
 plein `POST /api/user-cards/bulk-discard` — pas une session révoquée,

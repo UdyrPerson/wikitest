@@ -590,7 +590,25 @@ def open_via_api(req_ctx, count: int, results=None):
         # de tout le projet -- le paquet est ouvert cote serveur et ses
         # cartes sont deja revelees, mais on perd la reponse qui les porte.
         # Le stock est decremente pour rien.
-        resp = req_ctx.post("/api/packs/open", timeout=90000)
+        #
+        # UN ALEA RESEAU N'EST PAS UNE SESSION MORTE. Le 07/09/2026, un
+        # « read ETIMEDOUT » sur ce POST a fait echouer les comptes 2 et 4
+        # et rougir le job, sous le libelle « session probablement
+        # revoquee » -- alors que les deux comptes allaient tres bien et
+        # tournaient a 100 % de leur plafond. On s'arrete donc proprement
+        # pour ce compte au lieu de propager.
+        #
+        # On ne REESSAIE pas : /api/packs/open n'est pas idempotent, et le
+        # paquet a peut-etre ete ouvert cote serveur. Insister ouvrirait
+        # un second paquet dont on perdrait aussi les cartes.
+        try:
+            resp = req_ctx.post("/api/packs/open", timeout=90000)
+        except Exception as e:
+            print(f"    erreur reseau sur le paquet {i}/{count} "
+                  f"({e.__class__.__name__}) — on arrete ce compte")
+            print("    (ce n'est pas une session expiree : le rendement sur "
+                  "24 h dira si le compte decroche vraiment)")
+            break
 
         if resp.status == 401:
             raise SystemExit(
