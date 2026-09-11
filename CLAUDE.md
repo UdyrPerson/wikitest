@@ -249,6 +249,14 @@ D'où la cadence **journalière** de `trade.yml`, seule exception aux 50 min
 du projet : 1 envoi par émetteur, 8 acceptations pour le collecteur. Rien
 n'est perdu, `wm_trade_gift_wb.py` offrant tout le solde du moment.
 
+**Un échange est en plus plafonné à 10 000 wb**, ce qui est distinct du
+quota journalier : c'est le montant d'une seule offre. Le compte 8 en
+portait 19 000 le 12/09/2026 et son solde ne partait plus.
+`wm_trade_gift_wb.py` découpe donc en tranches de 10 000, **trois au
+maximum par passage** — au-delà, le surplus attend le lendemain plutôt que
+de manger le quota du collecteur (8 émetteurs × 3 offres = 24 acceptations
+pour lui, sur 50).
+
 Deux leçons de l'incident, au-delà du quota :
 
 - **le collecteur n'a pas de filet.** Un émetteur qui rate son tour

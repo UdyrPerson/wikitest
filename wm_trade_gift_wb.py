@@ -21,6 +21,7 @@ Exemple :
 """
 
 import sys
+import time
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
@@ -38,6 +39,22 @@ except Exception:
 from wm_session_io import ensure_fresh, persist
 
 BASE = "https://www.wiki-masters.com"
+
+# Le jeu refuse un echange de plus de 10 000 wikibidous entre deux amis.
+# Le compte 8 en portait 19 000 le 12/09/2026 : l'offre unique partait donc
+# au-dessus du plafond, et son solde ne bougeait plus.
+MAX_PAR_ECHANGE = 10_000
+
+# On decoupe, mais pas indefiniment : chaque offre consomme le quota du
+# COLLECTEUR, qui plafonne a 50 echanges par jour et qui est de tous les
+# echanges (envois + acceptations, cf CLAUDE.md). A huit emetteurs, trois
+# offres chacun lui font 24 acceptations -- large. Le surplus eventuel
+# attend le passage du lendemain.
+# ponytail: plafond fixe a 3 offres, a relever si un compte se met a gagner
+# plus de 30 000 wb par jour.
+MAX_OFFRES = 3
+
+DELAY = 2.0  # entre deux offres, cf CLAUDE.md
 
 
 def main():
@@ -96,27 +113,41 @@ def gift(req, target_username):
         print("Rien a envoyer (solde nul).")
         return
 
-    # timeout releve a 90s : la valeur par defaut de Playwright (30s) a
-    # provoque un TimeoutError sur cet appel le 30/08/2026 alors que la
-    # creation de l'echange avait probablement abouti cote serveur. Un
-    # timeout ici est le pire cas -- on ignore une reponse qui existe, donc
-    # on ne sauvegarde pas les cookies tournes qu'elle transportait.
-    create_resp = req.post(
-        "/api/trades",
-        data={
-            "recipient_id": recipient_id,
-            "items": [],
-            "initiator_wikibidous": balance,
-            "recipient_wikibidous": 0,
-        },
-        timeout=90000,
-    )
-    if create_resp.status >= 400:
-        print(f"Echec ({create_resp.status}) : {create_resp.text()[:500]}")
-    else:
+    reste = balance
+    for i in range(1, MAX_OFFRES + 1):
+        if reste <= 0:
+            break
+        montant = min(reste, MAX_PAR_ECHANGE)
+
+        # timeout releve a 90s : la valeur par defaut de Playwright (30s) a
+        # provoque un TimeoutError sur cet appel le 30/08/2026 alors que la
+        # creation de l'echange avait probablement abouti cote serveur. Un
+        # timeout ici est le pire cas -- on ignore une reponse qui existe, donc
+        # on ne sauvegarde pas les cookies tournes qu'elle transportait.
+        create_resp = req.post(
+            "/api/trades",
+            data={
+                "recipient_id": recipient_id,
+                "items": [],
+                "initiator_wikibidous": montant,
+                "recipient_wikibidous": 0,
+            },
+            timeout=90000,
+        )
+        if create_resp.status >= 400:
+            print(f"Echec ({create_resp.status}) : {create_resp.text()[:500]}")
+            return
         trade = create_resp.json().get("trade", {})
-        print(f"Offre envoyee a {target_username} : {balance} wb — trade id {trade.get('id')}, "
+        reste -= montant
+        print(f"Offre {i} envoyee a {target_username} : {montant} wb "
+              f"(reste {reste}) — trade id {trade.get('id')}, "
               f"status={trade.get('status')}")
+        if reste > 0:
+            time.sleep(DELAY)
+
+    if reste > 0:
+        print(f"{reste} wb non envoyes : plafond de {MAX_OFFRES} offres par "
+              f"passage atteint. Le reste partira au prochain.")
 
 
 
