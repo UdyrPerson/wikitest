@@ -111,7 +111,7 @@ on:
           - "1440"
 
 permissions:
-  contents: read
+  contents: write
 
 # CONCURRENCE PARTAGEE ENTRE TOUS LES WORKFLOWS DE SESSION.
 # Les cinq workflows chargent les memes cinq secrets au demarrage et les
@@ -295,4 +295,33 @@ jobs:
       - name: Recapitulatif des mises en vente
         if: always()
         run: |
-          python wm_sell_auto.py --merge $(ls frag*.json 2>/dev/null)             | tee -a "$GITHUB_STEP_SUMMARY"
+          git fetch -q origin ventes && git show origin/ventes:ventes.jsonl > ventes.jsonl || : > ventes.jsonl
+          python wm_sell_auto.py --merge --registre ventes.jsonl $(ls frag*.json 2>/dev/null) | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # L'historique complet vit sur la branche `ventes`, pas sur main : ce
+      # workflow passe une vingtaine de fois par jour et autant de commits
+      # noieraient l'historique du code (meme raison que WM_PACK_LOG).
+      #
+      # Ecriture par plomberie plutot que par worktree : les identifiants
+      # poses par actions/checkout sont attaches au gitdir du depot
+      # principal, un worktree ne les verrait pas.
+      #
+      # Union et non remplacement : si le fetch de l'etape precedente a
+      # echoue, ventes.jsonl ne porte que la fenetre courante, et un simple
+      # `cp` effacerait tout le passe.
+      - name: Sauvegarde l'historique des ventes
+        if: always()
+        continue-on-error: true
+        run: |
+          git fetch -q origin ventes
+          git show origin/ventes:ventes.jsonl > ancien.jsonl
+          awk '!vu[$0]++' ancien.jsonl ventes.jsonl > fusion.jsonl
+          cmp -s ancien.jsonl fusion.jsonl && exit 0
+          blob=$(git hash-object -w fusion.jsonl)
+          export GIT_INDEX_FILE="$RUNNER_TEMP/index-ventes"
+          rm -f "$GIT_INDEX_FILE"
+          git update-index --add --cacheinfo 100644,"$blob",ventes.jsonl
+          tree=$(git write-tree)
+          unset GIT_INDEX_FILE
+          commit=$(git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit-tree "$tree" -p origin/ventes -m "Ventes : $(wc -l < fusion.jsonl) au total")
+          git push -q origin "$commit:refs/heads/ventes"

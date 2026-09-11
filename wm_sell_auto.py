@@ -512,7 +512,41 @@ def emit_fragment(path, label, creees, actives, vendues=None, invendues=None):
     )
 
 
-def merge_fragments(paths):
+def cumuler(chemin, ventes):
+    """Verse les ventes du passage dans l'historique permanent, le renvoie en entier.
+
+    Le serveur ne garde que les 50 dernieres annonces terminees par compte,
+    soit ~3 jours au rythme de septembre 2026 : une vente plus ancienne
+    sortait du recapitulatif pour toujours. Symptome constate le 11/09 :
+    69 ventes affichees d'un run a l'autre, mais une recette qui bougeait --
+    les vieilles partaient pendant que les neuves arrivaient. Le fichier vit
+    sur la branche `ventes`, hors de main (cf sell.yml)."""
+    p = Path(chemin)
+    registre = []
+    if p.exists():
+        for ligne in p.read_text(encoding="utf-8").splitlines():
+            try:
+                registre.append(json.loads(ligne))
+            except ValueError:
+                pass
+    cle = lambda e: (e.get("compte"), e.get("titre"), e.get("regle"))
+    vues = {cle(e) for e in registre}
+    nouvelles = []
+    for compte, v in ventes:
+        e = {"compte": compte, "titre": v.get("titre"), "rarete": v.get("rarete"),
+             "base": v.get("base"), "final": v.get("final"),
+             "regle": str(v.get("regle", "")).replace("T", " ")}
+        if cle(e) not in vues:
+            vues.add(cle(e))
+            nouvelles.append(e)
+    if nouvelles:
+        with p.open("a", encoding="utf-8", newline="\n") as f:
+            for e in nouvelles:
+                f.write(json.dumps(e, ensure_ascii=False) + "\n")
+    return [(e["compte"], e) for e in registre + nouvelles]
+
+
+def merge_fragments(paths, registre=None):
     """Recapitulatif Markdown, lisible tel quel dans $GITHUB_STEP_SUMMARY."""
     frags = []
     for p in paths:
@@ -526,20 +560,26 @@ def merge_fragments(paths):
     print(f"## Mises en vente — {total_creees} nouvelle(s), {total_actives} annonce(s) active(s)\n")
 
     if not frags:
-        print("_Aucun compte n'a produit de rapport._")
-        return
+        # Pas de `return` : meme quand les neuf comptes ont echoue,
+        # l'historique cumule des ventes reste consultable.
+        print("_Aucun compte n'a produit de rapport._\n")
 
     # Les ventes conclues d'abord : c'est le seul chiffre qui dit si la
     # strategie rapporte quelque chose. Une carte vendue disparait de la
     # collection sans autre trace, l'historique du compte est la seule
     # source.
     ventes = [(f.get("compte", "?"), v) for f in frags for v in (f.get("vendues") or [])]
+    if registre:
+        ventes = cumuler(registre, ventes)
     recette = sum((v.get("final") or 0) for _, v in ventes)
-    print(f"### Ventes conclues — {len(ventes)} carte(s), {recette} wb\n")
+    portee = "depuis le début" if registre else "sur les 50 dernières annonces par compte"
+    print(f"### Ventes conclues {portee} — {len(ventes)} carte(s), {recette} wb\n")
     if ventes:
         print("| Carte | Rareté | Compte | Demandé | Vendu | Réglé |")
         print("|---|---|---|---|---|---|")
-        for compte, v in sorted(ventes, key=lambda x: -(x[1].get("final") or 0)):
+        # Du plus recent au plus ancien : sur un historique qui s'allonge,
+        # un tri par prix enterrerait les ventes du jour.
+        for compte, v in sorted(ventes, key=lambda x: str(x[1].get("regle", "")), reverse=True):
             print(f"| {v.get('titre')} | {v.get('rarete')} | {compte} | {v.get('base')} | "
                   f"**{v.get('final')}** | {str(v.get('regle', '')).replace('T', ' ')} |")
     else:
@@ -592,7 +632,12 @@ def main():
     argv = sys.argv[1:]
 
     if argv and argv[0] == "--merge":
-        merge_fragments(argv[1:])
+        fichiers, registre = argv[1:], None
+        if "--registre" in fichiers:
+            i = fichiers.index("--registre")
+            registre = fichiers[i + 1]
+            del fichiers[i:i + 2]
+        merge_fragments(fichiers, registre)
         return
 
     def opt(nom, defaut=None):

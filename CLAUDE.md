@@ -389,7 +389,7 @@ les mettre en concurrence.
 | `boosters.yml` | 50 min, minutes 0/10/20/30/40 | Les 9 comptes en **séquentiel dans un seul job**, `--count 10` chacun (voir la limite quotidienne). Publie le **rendement sur 24 h** (n/144) dans le résumé du run |
 | `discard.yml` | 50 min, +5 min | Défausse `C,PC,R,SR` sur les 9 comptes. Publie le **récapitulatif des cartes défaussées** par compte et par rareté dans le résumé du run |
 | `trade.yml` | **1 jour**, 00:58 UTC | Les 8 émetteurs offrent leur solde, puis le collecteur accepte tout (voir la limite de 50 échanges/jour) |
-| `sell.yml` | 50 min, +15 min | Met en vente les meilleures **UR et L** des 9 comptes. Entrée `dry_run` (vraie par défaut en manuel), `rarities` pour restreindre |
+| `sell.yml` | 50 min, +15 min | Met en vente les meilleures **UR et L** des 9 comptes. Entrée `dry_run` (vraie par défaut en manuel), `rarities` pour restreindre. Tient l'**historique cumulé des ventes** sur la branche `ventes` |
 | `market-buy.yml` | **manuel** | Le collecteur rachète au prix demandé les enchères du vendeur suivi (`WM_MARKET_SELLER`), **parmi celles qui finissent dans moins de 10 min**. `dry_run` **faux** par défaut, plus `complet`, `fenetre_min`, `max_depense` |
 | `report-rares.yml` | manuel | Lecture seule, rapport dans le résumé du run |
 
@@ -419,6 +419,18 @@ Noter aussi que le motif à 6 lignes n'est pas une garantie en soi :
 l'écart avec `boosters` et `discard`. Et un **trou global de 94 min**
 (09:43 → 11:17 UTC) a touché tous les workflows le même jour : c'est
 l'ordonnanceur de GitHub, pas le dépôt.
+
+**L'historique des ventes ne tient pas dans la fenêtre du serveur.**
+`mine=1` ne renvoie que les **50 dernières annonces terminées par compte**,
+soit ~3 jours au rythme de septembre 2026. Le récapitulatif affichait donc
+69 ventes d'un run à l'autre avec une recette qui changeait : les vieilles
+sortaient pendant que les neuves entraient. Au 12/09, **202 ventes réelles
+contre 72 encore visibles**. `wm_sell_auto.py --merge --registre` verse
+donc chaque passage dans un `ventes.jsonl` cumulatif (dédoublonné sur
+compte + titre + date de règlement), qui vit sur la **branche `ventes`** :
+pas sur `main`, que ce workflow noierait sous une vingtaine de commits par
+jour — même raison que `WM_PACK_LOG`. Les 202 premières lignes ont été
+reconstituées depuis les tableaux des anciens résumés de run.
 
 **Un aléa réseau n'est pas une session morte.** Le 07/09/2026, un
 `read ETIMEDOUT` sur `POST /api/packs/open` a fait échouer les comptes 2
