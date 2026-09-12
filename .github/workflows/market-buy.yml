@@ -66,6 +66,9 @@ on:
       max_depense:
         description: "Plafond de depense pour ce passage, en wb (vide = tout le solde)"
         default: ""
+      vendeur:
+        description: "Racheter un AUTRE vendeur (pseudo ou UUID). Vide = le vendeur suivi. Attention : ce qu'on tape ici apparait en clair dans le journal du run, contrairement au secret."
+        default: ""
 
 permissions:
   contents: read
@@ -131,7 +134,11 @@ jobs:
         id: buy
         continue-on-error: true
         env:
-          WM_MARKET_SELLER: ${{ secrets.WM_MARKET_SELLER }}
+          # L'entree manuelle l'emporte, le secret reste le defaut : on peut
+          # viser un autre vendeur pour un passage sans rien changer au
+          # reglage permanent. wm_market_buy.py accepte un pseudo comme un
+          # UUID, et ne l'imprime dans aucun des deux cas.
+          WM_MARKET_SELLER: ${{ inputs.vendeur || secrets.WM_MARKET_SELLER }}
         run: |
           python wm_market_buy.py state3.json \
             --fenetre-min "${{ inputs.fenetre_min || '10' }}" \
@@ -165,6 +172,6 @@ jobs:
             echo "- TimeoutError : le site n'a pas repondu a temps, relancer suffit."
             echo ""
             echo "Lire le journal de l'etape avant de reparer : une reconnexion"
-            echo "inutile invalide une session qui allait tres bien.
+            echo "inutile invalide une session qui allait tres bien."
           } | tee -a "$GITHUB_STEP_SUMMARY"
           exit 1
