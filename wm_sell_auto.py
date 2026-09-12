@@ -577,9 +577,9 @@ def merge_fragments(paths, registre=None):
     if ventes:
         print("| Carte | Rareté | Compte | Demandé | Vendu | Réglé |")
         print("|---|---|---|---|---|---|")
-        # Du plus recent au plus ancien : sur un historique qui s'allonge,
-        # un tri par prix enterrerait les ventes du jour.
-        for compte, v in sorted(ventes, key=lambda x: str(x[1].get("regle", "")), reverse=True):
+        # Par prix decroissant : les meilleures ventes en tete, c'est ce
+        # qu'on vient lire. La date reste dans la derniere colonne.
+        for compte, v in sorted(ventes, key=lambda x: -(x[1].get("final") or 0)):
             print(f"| {v.get('titre')} | {v.get('rarete')} | {compte} | {v.get('base')} | "
                   f"**{v.get('final')}** | {str(v.get('regle', '')).replace('T', ' ')} |")
     else:
