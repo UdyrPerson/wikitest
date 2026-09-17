@@ -108,8 +108,15 @@ def discard_rarity(req_ctx, rarity: str, remaining_budget) -> int:
 
     discarded = 0
     while remaining_budget[0] > 0:
-        resp = req_ctx.get(f"/api/my-collection?sort=rarity&rarity={rarity}&page=0&stats=0",
-                           timeout=90000)
+        try:
+            resp = req_ctx.get(f"/api/my-collection?sort=rarity&rarity={rarity}&page=0&stats=0",
+                               timeout=90000)
+        except Exception as e:
+            # Meme raison que sur le POST plus bas : un alea reseau n'est pas
+            # une session morte, et ne doit pas faire rougir le job.
+            print(f"    erreur reseau sur la lecture {rarity} "
+                  f"({e.__class__.__name__}) — on arrete ce compte")
+            break
         if resp.status == 401:
             raise SystemExit("401 sur my-collection — session expiree. Relance wm_session_auto.py.")
         if resp.status == 403:
@@ -151,8 +158,19 @@ def discard_rarity(req_ctx, rarity: str, remaining_budget) -> int:
         # cote serveur, mais on abandonne la reponse -- donc le decompte et
         # les cookies eventuellement tournes qu'elle portait. Rien n'est
         # perdu pour autant, la boucle relisant la page 0 au tour suivant.
-        d_resp = req_ctx.post("/api/user-cards/bulk-discard",
-                              data={"card_ids": ids}, timeout=90000)
+        #
+        # UN ALEA RESEAU N'EST PAS UNE SESSION MORTE, ici non plus. Le
+        # 17/09/2026, quatre comptes parfaitement sains ont fait echouer le
+        # job sur un « read ETIMEDOUT » -- meme correctif que celui pose sur
+        # /api/packs/open le 07/09. On ne reessaie pas : la route n'est pas
+        # idempotente, et la boucle relit la page 0 au passage suivant.
+        try:
+            d_resp = req_ctx.post("/api/user-cards/bulk-discard",
+                                  data={"card_ids": ids}, timeout=90000)
+        except Exception as e:
+            print(f"    erreur reseau sur le lot {rarity} "
+                  f"({e.__class__.__name__}) — on arrete ce compte")
+            break
         if d_resp.status == 401:
             raise SystemExit("401 sur bulk-discard — session expiree. Relance wm_session_auto.py.")
         if d_resp.status == 403:
