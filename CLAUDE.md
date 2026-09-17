@@ -9,9 +9,9 @@ GitHub Actions.
 
 Ce qu'il fait aujourd'hui :
 
-- ouvre les boosters de 9 comptes, en continu, sans machine allumée ;
+- ouvre les boosters de 5 comptes, en continu, sans machine allumée ;
 - défausse les cartes communes (C/PC/R/SR) pour les convertir en wikibidous ;
-- consolide les wikibidous des 8 comptes émetteurs vers un compte collecteur,
+- consolide les wikibidous des 4 comptes émetteurs vers un compte collecteur,
   via le système d'échange du jeu ;
 - lit le marché depuis le compte premium et en tire une table de référence
   des prix de vente réels (**terminée** : 1798 L et 12 245 UR) ;
@@ -36,9 +36,9 @@ maintenant sur le site (ouverture, défausse, échanges, mises en vente).
 Le projet vit sur deux plans qu'il ne faut pas confondre :
 
 **1. GitHub Actions — pure API, aucun navigateur.** C'est ce qui tourne en
-production, toutes les 50 min. Les sessions des 9 comptes de test vivent dans
-des secrets GitHub (`WM_TEST_STORAGE_STATE` … `WM_TEST9_STORAGE_STATE`), sont
-écrites en `state1.json` … `state9.json` au début du job, et **repoussées dans
+production, toutes les 50 min. Les sessions des 5 comptes de test vivent dans
+des secrets GitHub (`WM_TEST_STORAGE_STATE` … `WM_TEST5_STORAGE_STATE`), sont
+écrites en `state1.json` … `state5.json` au début du job, et **repoussées dans
 leur secret juste après le passage de leur compte** (voir « Le piège central »
 plus bas). Playwright n'est installé que pour son client HTTP :
 `pip install playwright`, sans `playwright install`.
@@ -59,7 +59,7 @@ trou dans la série.
 
 | | Rôle |
 |---|---|
-| Comptes 1, 2, 4, 5, 6, 7, 8, 9 | Émetteurs : ouvrent des boosters, défaussent, offrent leur solde |
+| Comptes 1, 2, 4, 5 | Émetteurs : ouvrent des boosters, défaussent, offrent leur solde |
 | Compte 3 | **Collecteur** : ouvre et défausse aussi, mais reçoit les échanges au lieu d'en envoyer |
 | Compte premium | Compte principal, séparé de l'automatisation. Seul à voir l'historique des ventes conclues. Session dans `storage_state_premium.json` |
 
@@ -67,7 +67,25 @@ Le pseudo du collecteur est dans le secret `WM_TRADE_RECIPIENT`, pas en dur
 dans le code. Le collecteur doit être « ami » avec chaque émetteur pour que
 l'échange passe.
 
-Les quatre derniers comptes ont été ajoutés le 04/09/2026. Aucun endpoint de
+### Les comptes 6 à 9 ont été bannis le 17/09/2026
+
+Quatre comptes avaient été ajoutés le 04/09 (`josin33471`, `lokox26692`,
+`haxiwas190`, `yigoce9300`), créés via `wm_signup.py` et des adresses
+jetables. Le 17/09 ils tombent tous les quatre en 401, et la page de
+connexion répond **`User is banned`** — vérifié en capture d'écran, ce
+n'est pas une session révoquée. `wm_session_repair.py` a refusé d'écrire,
+leurs secrets sont donc intacts mais sans valeur.
+
+Le compteur de rendement l'avait signalé avant qu'on regarde : ces quatre
+à **72 %**, les cinq autres entre 88 et 100 %.
+
+Ils ont été retirés des cinq workflows le 17/09 (`git revert` possible si
+le bannissement était levé). **La flotte est retombée à 5 comptes**, tous
+sains. On ne cherche pas à contourner la sanction : recréer des comptes de
+remplacement, changer d'IP ou d'empreinte, c'est exactement ce qu'elle
+vise. Le canal, s'il y en a un, est l'éditeur du jeu.
+
+Aucun endpoint de
 **recherche d'utilisateur** n'existe : `POST /api/friends` exige l'UUID du
 destinataire, qu'on lit hors ligne dans le jeton de sa session
 (`user.id`). `/api/friends/requests` renvoie 405 sur GET comme sur POST —
