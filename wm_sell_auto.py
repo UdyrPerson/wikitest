@@ -172,6 +172,15 @@ NIVEAU_SECOURS = 3
 # ce sont precisement celles qui ne valent pas un emplacement.
 PRIX_ABANDON = 200
 
+# Meme idee pour le REPECHAGE (niveau 3), mais plus bas : une carte
+# repechee n'occupe qu'un emplacement dont personne d'autre ne voulait, on
+# peut donc accepter moins qu'une mise en vente ordinaire. Pas n'importe
+# quoi pour autant -- le 25/09/2026, le repechage descendait jusqu'a
+# PRIX_PLANCHER (10 wb), et une UR etait listee a 17 wb pendant que 104
+# autres attendaient leur tour sur 25 emplacements. En dessous de ce
+# seuil, l'emplacement vaut mieux au candidat suivant.
+PRIX_ABANDON_SECOURS = 150
+
 # Plancher PROPORTIONNEL a la valeur de la carte, en plus du seuil absolu.
 #
 # Sans lui, une carte chere re-obtenue apres avoir ete vendue repartirait
@@ -402,6 +411,15 @@ def candidats(rows, ref, exclues, derniers=None, rang_rarete=0, dispersion_max=D
         if not demande or demande <= 0:
             demande = prix_secours(fiche, deja_vue)
             niveau = NIVEAU_SECOURS
+            # ... mais pas a n'importe quel prix. Le raisonnement ci-dessus
+            # ne tient que s'il n'y a pas de meilleur candidat. Le
+            # 25/09/2026 les cinq comptes detenaient 104 UR pour 25
+            # emplacements, et cinq annonces etaient sous 200 wb dont une a
+            # 17 : ce n'etait plus remplir un vide, c'etait ecarter une
+            # carte potentiellement meilleure. En dessous de ce seuil, on
+            # rend donc la place au candidat suivant.
+            if demande < PRIX_ABANDON_SECOURS:
+                demande = 0
 
         # Des le second passage on raccourcit : inutile d'immobiliser six
         # heures pour reverifier un prix plus bas.

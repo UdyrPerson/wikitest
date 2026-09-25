@@ -617,7 +617,16 @@ raisonnement ne tient que si un meilleur candidat attend l'emplacement — à
 8 en avait 4 pour 1. Un emplacement vide rapporte zéro, ce qui est pire que
 n'importe quelle vente. Ces cartes sont donc servies en dernier, seulement
 s'il reste de la place, au plancher **relatif** (`FRACTION_PLANCHER` ×
-médiane) qui continue de protéger les cartes chères. Deux plafonds : on ne
+médiane) qui continue de protéger les cartes chères.
+
+**Corrigé le 25/09/2026 : le repêchage a désormais son propre plancher
+absolu, `PRIX_ABANDON_SECOURS` = 150 wb.** Le raisonnement « un
+emplacement vide rapporte zéro » ne vaut que s'il n'y a pas de meilleur
+candidat — et ce n'était plus le cas : les cinq comptes détenaient
+**104 UR pour 25 emplacements**, dont cinq annonces sous 200 wb et une à
+**17**. Descendre si bas n'était plus remplir un vide mais écarter une
+carte meilleure. Mesuré sur `reference/UR.json` : 79 % des UR restent
+repêchables au-dessus de 150, 21 % sont écartées. Deux plafonds : on ne
 demande jamais plus que le dernier prix refusé, ni plus que le maximum
 jamais atteint — sans quoi une carte invendue à 210 serait remise à 300.
 
