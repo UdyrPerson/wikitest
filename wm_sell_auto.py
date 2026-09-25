@@ -588,18 +588,35 @@ def merge_fragments(paths, registre=None):
 
     # Une invendue deja remise en vente n'attend plus rien : on ne garde
     # que celles dont la carte n'est pas sur le marche a cet instant.
-    invendues = []
+    #
+    # UNE LIGNE PAR CARTE, PAS PAR ANNONCE RATEE. L'historique du serveur
+    # contient une entree par enchere terminee : une carte descendue sept
+    # fois y figurait sept fois, avec ses sept prix successifs. Le tableau
+    # annoncait « 51 invendues » pour 17 cartes reelles (25/09/2026), et
+    # se lisait comme une liste de doublons. On regroupe donc par carte,
+    # en gardant le dernier prix demande -- le seul qui dise ou en est la
+    # descente -- et on affiche le nombre de tentatives, qui est le vrai
+    # signal : sept echecs sur la meme carte disent qu'elle ne part pas.
+    par_carte = {}
     for f in frags:
+        compte = f.get("compte", "?")
         en_vente = {a.get("card_id") for a in (f.get("actives") or [])}
         for v in f.get("invendues") or []:
-            if v.get("card_id") not in en_vente:
-                invendues.append((f.get("compte", "?"), v))
+            if v.get("card_id") in en_vente:
+                continue
+            fiche = par_carte.setdefault((compte, v.get("card_id")), [compte, v, 0])
+            fiche[2] += 1
+            if str(v.get("regle", "")) > str(fiche[1].get("regle", "")):
+                fiche[1] = v
+
+    invendues = list(par_carte.values())
     if invendues:
         print(f"### Invendues, en attente de repositionnement — {len(invendues)}\n")
-        print("| Carte | Rareté | Compte | Dernier prix |")
-        print("|---|---|---|---|")
-        for compte, v in sorted(invendues, key=lambda x: -(x[1].get("base") or 0)):
-            print(f"| {v.get('titre')} | {v.get('rarete')} | {compte} | {v.get('base')} |")
+        print("| Carte | Rareté | Compte | Dernier prix | Tentatives |")
+        print("|---|---|---|---:|---:|")
+        for compte, v, essais in sorted(invendues, key=lambda x: -(x[1].get("base") or 0)):
+            print(f"| {v.get('titre')} | {v.get('rarete')} | {compte} | "
+                  f"{v.get('base')} | {essais} |")
         print()
 
     for f in frags:
