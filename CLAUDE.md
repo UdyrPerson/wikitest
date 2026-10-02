@@ -193,6 +193,31 @@ Le stock, lui, semble plafonner autour de 9–10 : pendant une ouverture en
 rafale, `packs_remaining` reste à 9 sur les premiers paquets avant de
 décroître, la régénération compensant au fil de l'eau.
 
+### Vérification anti-bot sur l'ouverture (01/10/2026)
+
+Depuis le **01/10/2026 vers 18:30 UTC**, `POST /api/packs/open` répond 403 :
+
+```json
+{"error": "Vérification anti-bot requise pour continuer à ouvrir des paquets.",
+ "human_verification_required": true, "code": "human_verification_required"}
+```
+
+Les cinq comptes sont tombés dessus **en même temps**, après avoir chacun
+ouvert ses 140–144 paquets de la journée. Plus un seul paquet depuis.
+
+**Ce n'est ni un bug du site ni une panne de session** : c'est une mesure
+anti-automatisation explicite de l'éditeur. Elle se lève à la main, dans un
+navigateur, par un humain — il n'y a rien à automatiser ici, et le projet
+ne cherche pas à la contourner (même position que pour le bannissement des
+comptes 6 à 9).
+
+Piège de diagnostic, corrigé le 02/10 : le message **contient le mot
+« paquets »**, donc il tombait dans la branche « plus de paquets
+disponibles » de `open_via_api`. Les cinq comptes ont affiché « stock
+vide » pendant vingt heures pendant que le serveur disait tout autre
+chose. Le test sur `human_verification_required` passe désormais **avant**
+le test générique.
+
 ### Le plafond d'ouverture vaut 144 paquets par 24 h glissantes
 
 Établi le 06/09/2026 par deux chemins indépendants qui concordent.

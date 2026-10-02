@@ -628,6 +628,28 @@ def open_via_api(req_ctx, count: int, results=None):
                 payload = resp.json()
             except Exception:
                 payload = {}
+            # VERIFICATION ANTI-BOT. Apparue le 01/10/2026 vers 18:30 : le
+            # jeu exige desormais une verification humaine pour continuer a
+            # ouvrir des paquets.
+            #
+            #   {"error":"Verification anti-bot requise pour continuer a
+            #    ouvrir des paquets.","human_verification_required":true,
+            #    "code":"human_verification_required"}
+            #
+            # Il FAUT la distinguer, et avant le test generique ci-dessous :
+            # son message contient le mot "paquets", donc il tombait dans la
+            # branche "plus de paquets disponibles". Les cinq comptes ont
+            # affiche "stock vide" pendant vingt heures alors que le serveur
+            # disait tout autre chose -- vingt heures de diagnostic perdu.
+            #
+            # Rien a automatiser ici : c'est une mesure anti-automatisation,
+            # elle se leve a la main dans un navigateur, par un humain.
+            if payload.get("human_verification_required") or \
+                    payload.get("code") == "human_verification_required":
+                print("    VERIFICATION ANTI-BOT demandee par le jeu — ce compte ne")
+                print("    peut plus ouvrir de paquets tant qu'elle n'est pas faite")
+                print("    a la main sur le site. Rien a reessayer ici.")
+                break
             if payload.get("packs_remaining") == 0 or "paquet" in str(payload.get("error", "")).lower():
                 regen = payload.get("next_regen_at")
                 suffix = f" — prochaine regeneration : {regen}" if regen else ""
